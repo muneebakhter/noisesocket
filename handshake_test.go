@@ -15,11 +15,15 @@ func TestHandshake(t *testing.T) {
 	ki := noise.DH25519.GenerateKeypair(rand.Reader)
 	ks := noise.DH25519.GenerateKeypair(rand.Reader)
 
-	hm, istates, err := ComposeInitiatorHandshakeMessages(ki, ks.Public, nil)
+	payload := make([]byte, 500)
+	rand.Read(payload)
+
+	hm, _, istates, err := ComposeInitiatorHandshakeMessages(ki, nil, payload)
 	assert.NoError(t, err)
 
-	_, rstate, index, err := ParseHandshake(ks, hm)
+	_, rstate, index, err := ParseHandshake(ks, hm, -1)
 	assert.NoError(t, err)
+	//assert.Equal(t, payload, parsedPayload)
 
 	msg := make([]byte, 10*1024)
 	rand.Read(msg)

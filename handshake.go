@@ -15,16 +15,16 @@ type HandshakeMessage struct {
 	Message []byte
 }
 
-func ComposeInitiatorHandshakeMessages(s noise.DHKey, rs []byte, payload []byte) ([]byte, []*noise.HandshakeState, error) {
+func ComposeInitiatorHandshakeMessages(s noise.DHKey, rs []byte, payload []byte) (msg []byte, prologue []byte, states []*noise.HandshakeState, err error) {
 
 	if len(rs) != 0 && len(rs) != noise.DH25519.DHLen() {
-		return nil, nil, errors.New("only 32 byte curve25519 public keys are supported")
+		return nil, nil, nil, errors.New("only 32 byte curve25519 public keys are supported")
 	}
 	res := make([]byte, 0, 2048)
 
 	usedPatterns := []noise.HandshakePattern{noise.HandshakeXX}
 
-	prologue := make([]byte, 1, 1024)
+	prologue = make([]byte, 1, 1024)
 
 	//we checked this in init
 	prologue[0] = byte(len(protoCipherPriorities[noise.HandshakeXX.Name]))
@@ -37,13 +37,13 @@ func ComposeInitiatorHandshakeMessages(s noise.DHKey, rs []byte, payload []byte)
 		prologue = append(prologue, prologues[noise.HandshakeIK.Name]...)
 
 		if len(protoCipherPriorities[noise.HandshakeIK.Name])+int(prologue[0]) > math.MaxUint8 {
-			return nil, nil, errors.New("too many sub-messages for a single message")
+			return nil, nil, nil, errors.New("too many sub-messages for a single message")
 		}
 
 		prologue[0] += byte(len(protoCipherPriorities[noise.HandshakeIK.Name]))
 	}
 
-	states := make([]*noise.HandshakeState, 0, prologue[0])
+	states = make([]*noise.HandshakeState, 0, prologue[0])
 
 	for _, pattern := range usedPatterns {
 
@@ -92,13 +92,13 @@ func ComposeInitiatorHandshakeMessages(s noise.DHKey, rs []byte, payload []byte)
 
 			// we cannot send the message if its length exceeds 2^16 - 1
 			if len(res)+len(msg) > (math.MaxUint16 - uint16Size) {
-				return nil, nil, errors.New("Message is too big")
+				return nil, nil, nil, errors.New("Message is too big")
 			}
 			res = append(res, msg...)
 
 		}
 	}
-	return res, states, nil
+	return res, prologue, states, nil
 }
 
 func CanWrite(pattern noise.HandshakePattern, msgIndex int) bool {
@@ -110,7 +110,7 @@ func CanWrite(pattern noise.HandshakePattern, msgIndex int) bool {
 	return false
 }
 
-func ParseHandshake(s noise.DHKey, handshake []byte) (payload []byte, hs *noise.HandshakeState, messageIndex byte, err error) {
+func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int) (payload []byte, hs *noise.HandshakeState, messageIndex byte, err error) {
 
 	parsedPrologue := make([]byte, 1, 1024)
 	messages := make([]*HandshakeMessage, 0, 16)
@@ -156,30 +156,48 @@ func ParseHandshake(s noise.DHKey, handshake []byte) (payload []byte, hs *noise.
 	}
 
 	//choose protocol that we want to use, according to server priorities
+	if prefferedIndex == -1 {
+		for _, pr := range protoPriorities {
+			for _, p := range protoCipherPriorities[pr] {
+				for i, m := range messages {
+					if p == m.Config.NameKey {
+						state := noise.NewHandshakeState(noise.Config{
+							StaticKeypair: s,
+							Initiator:     false,
+							Pattern:       m.Config.Pattern,
+							CipherSuite:   noise.NewCipherSuite(m.Config.DH, m.Config.Cipher, m.Config.Hash),
+							Prologue:      parsedPrologue,
+							Random:        rand.Reader,
+						})
 
-	for _, pr := range protoPriorities {
-		for _, p := range protoCipherPriorities[pr] {
-			for i, m := range messages {
-				if p == m.Config.NameKey {
-					state := noise.NewHandshakeState(noise.Config{
-						StaticKeypair: s,
-						Initiator:     false,
-						Pattern:       m.Config.Pattern,
-						CipherSuite:   noise.NewCipherSuite(m.Config.DH, m.Config.Cipher, m.Config.Hash),
-						Prologue:      parsedPrologue,
-						Random:        rand.Reader,
-					})
+						payload, _, _, err := state.ReadMessage(nil, m.Message)
+						if err != nil {
+							return nil, nil, 0, err
+						}
 
-					payload, _, _, err := state.ReadMessage(nil, m.Message)
-					if err != nil {
-						return nil, nil, 0, err
+						return payload, state, byte(i), nil
 					}
-
-					return payload, state, byte(i), nil
 				}
-			}
 
+			}
 		}
+	} else {
+		m := messages[prefferedIndex]
+		state := noise.NewHandshakeState(noise.Config{
+			StaticKeypair: s,
+			Initiator:     false,
+			Pattern:       m.Config.Pattern,
+			CipherSuite:   noise.NewCipherSuite(m.Config.DH, m.Config.Cipher, m.Config.Hash),
+			Prologue:      parsedPrologue,
+			Random:        rand.Reader,
+		})
+
+		payload, _, _, err := state.ReadMessage(nil, m.Message)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		return payload, state, byte(prefferedIndex), nil
 	}
 
 	return nil, nil, 0, errors.New("no supported protocols found")

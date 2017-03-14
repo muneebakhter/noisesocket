@@ -301,7 +301,7 @@ func (c *Conn) RunClientHandshake() error {
 
 	b.AddField(c.payload, MessageTypeCustomCert)
 
-	if msg, states, err = ComposeInitiatorHandshakeMessages(c.myKeys, c.PeerKey, b.data); err != nil {
+	if msg, _, states, err = ComposeInitiatorHandshakeMessages(c.myKeys, c.PeerKey, b.data); err != nil {
 		return err
 	}
 
@@ -388,7 +388,7 @@ func (c *Conn) RunServerHandshake() error {
 
 	msg := c.input.data[c.input.off:]
 
-	payload, hs, index, err := ParseHandshake(c.myKeys, msg)
+	payload, hs, index, err := ParseHandshake(c.myKeys, msg, -1)
 
 	c.in.freeBlock(c.input)
 	c.input = nil
