@@ -1,4 +1,4 @@
-package noisetls
+package noisesocket
 
 import (
 	"math"

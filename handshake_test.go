@@ -1,4 +1,4 @@
-package noisetls
+package noisesocket
 
 import (
 	"testing"
@@ -15,10 +15,10 @@ func TestHandshake(t *testing.T) {
 	ki := noise.DH25519.GenerateKeypair(rand.Reader)
 	ks := noise.DH25519.GenerateKeypair(rand.Reader)
 
-	hm, istates, err := ComposeInitiatorHandshakeMessages(ki, ks.Public)
+	hm, istates, err := ComposeInitiatorHandshakeMessages(ki, ks.Public, nil)
 	assert.NoError(t, err)
 
-	rstate, index, err := ParseHandshake(ks, hm)
+	_, rstate, index, err := ParseHandshake(ks, hm)
 	assert.NoError(t, err)
 
 	msg := make([]byte, 10*1024)

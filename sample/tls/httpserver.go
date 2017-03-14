@@ -38,14 +38,6 @@ func main() {
 		w.Write(buf)
 	})
 
-	/*pub, _ := base64.StdEncoding.DecodeString("J6TRfRXR5skWt6w5cFyaBxX8LPeIVxboZTLXTMhk4HM=")
-	priv, _ := base64.StdEncoding.DecodeString("vFilCT/FcyeShgbpTUrpru9n5yzZey8yfhsAx6DeL80=")
-
-	serverKeys := noise.DHKey{
-		Public:  pub,
-		Private: priv,
-	}*/
-
 	cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
 	if err != nil {
 		log.Println(err)
@@ -55,7 +47,7 @@ func main() {
 	l, err := tls.Listen("tcp", ":5000", &tls.Config{
 		Certificates: []tls.Certificate{cert},
 	})
-	//l, err := noisetls.Listen("tcp", ":5000", serverKeys)
+
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)

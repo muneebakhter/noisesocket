@@ -21,26 +21,9 @@ func main() {
 
 	threads := 10
 
-	/*pub1, _ := base64.StdEncoding.DecodeString("J6TRfRXR5skWt6w5cFyaBxX8LPeIVxboZTLXTMhk4HM=")
-	priv1, _ := base64.StdEncoding.DecodeString("vFilCT/FcyeShgbpTUrpru9n5yzZey8yfhsAx6DeL80=")
-
-	serverPub, _ := base64.StdEncoding.DecodeString("J6TRfRXR5skWt6w5cFyaBxX8LPeIVxboZTLXTMhk4HM=")
-
-	clientKeys := noise.DHKey{
-		Public:  pub1,
-		Private: priv1,
-	}*/
-
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: threads,
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-		/*DialTLS: func(network, addr string) (net.Conn, error) {
-			conn, err := noisetls.Dial(network, addr, clientKeys, serverPub)
-			if err != nil {
-				fmt.Println(err)
-			}
-			return conn, err
-		},*/
 	}
 	for j := 0; j < threads; j++ {
 		go func() {

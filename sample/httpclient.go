@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/flynn/noise"
-	"gopkg.in/noisetls.v0"
+	"gopkg.in/noisesocket.v0"
 )
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: threads,
 		DialTLS: func(network, addr string) (net.Conn, error) {
-			conn, err := noisetls.Dial(network, addr, clientKeys, serverPub, payload)
+			conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, payload)
 			if err != nil {
 				fmt.Println(err)
 			}
