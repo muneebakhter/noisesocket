@@ -26,8 +26,8 @@ type Conn struct {
 	handshakeComplete bool
 	isClient          bool
 	handshakeErr      error
-	input             *block
-	rawInput          *block
+	input             *packet
+	rawInput          *packet
 	padding           uint16
 	payload           []byte
 }
@@ -93,7 +93,7 @@ func (c *Conn) writePacket(data []byte) (int, error) {
 }
 
 //InitializePacket adds additional sub-messages if needed
-func (c *Conn) InitializePacket() *block {
+func (c *Conn) InitializePacket() *packet {
 	block := c.out.newBlock()
 	block.resize(uint16Size)
 	return block
@@ -138,7 +138,7 @@ func (c *Conn) writePacketLocked(data []byte) (int, error) {
 	return n, nil
 }
 
-func (c *Conn) maxPayloadSizeForWrite(block *block) uint16 {
+func (c *Conn) maxPayloadSizeForWrite(block *packet) uint16 {
 	res := MaxPayloadSize - uint16(len(block.data))
 	if c.out.cs != nil {
 		if c.padding > 0 {
@@ -219,7 +219,7 @@ func (c *Conn) readPacket() error {
 
 	in := c.in.newBlock()
 	if c.in.cs != nil {
-		messages, err := ParseMessages(payload)
+		messages, err := parseMessageFields(payload)
 
 		if err != nil {
 			c.in.setErrorLocked(err)
@@ -259,7 +259,7 @@ func (c *Conn) Handshake() error {
 	// However, if a Read() operation is hanging then it'll be holding the
 	// lock on c.in and so taking it here would cause all operations that
 	// need to check whether a handshake is pending (such as Write) to
-	// block.
+	// packet.
 	//
 	// Thus we take c.handshakeMutex first and, if we find that a handshake
 	// is needed, then we unlock, acquire c.in and c.handshakeMutex in the
@@ -301,7 +301,7 @@ func (c *Conn) RunClientHandshake() error {
 
 	b.AddField(c.payload, MessageTypeCustomCert)
 
-	if msg, _, states, err = ComposeInitiatorHandshakeMessages(c.myKeys, c.PeerKey, b.data); err != nil {
+	if msg, _, states, err = ComposeInitiatorHandshakeMessages(c.myKeys, c.PeerKey, b.data, nil); err != nil {
 		return err
 	}
 
@@ -388,7 +388,7 @@ func (c *Conn) RunServerHandshake() error {
 
 	msg := c.input.data[c.input.off:]
 
-	payload, hs, index, err := ParseHandshake(c.myKeys, msg, -1)
+	payload, hs, _, index, err := ParseHandshake(c.myKeys, msg, -1, nil)
 
 	c.in.freeBlock(c.input)
 	c.input = nil
@@ -462,7 +462,7 @@ func (c *Conn) RunServerHandshake() error {
 
 func processPayload(payload []byte) error {
 	if len(payload) > 0 {
-		msgs, err := ParseMessages(payload)
+		msgs, err := parseMessageFields(payload)
 
 		if err != nil {
 			return err

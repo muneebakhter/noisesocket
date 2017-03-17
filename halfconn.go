@@ -13,7 +13,7 @@ type halfConn struct {
 	sync.Mutex
 	cs      *noise.CipherState
 	err     error
-	bfree   *block // list of free blocks
+	bfree   *packet // list of free blocks
 	padding uint16
 }
 
@@ -25,7 +25,7 @@ const (
 
 // encryptIfNeeded prepares packet structure depending on padding and data length.
 // It also encrypts it if cipher is set up (handshake is done)
-func (h *halfConn) encryptIfNeeded(block *block) []byte {
+func (h *halfConn) encryptIfNeeded(block *packet) []byte {
 
 	if h.cs != nil {
 
@@ -53,7 +53,7 @@ func (h *halfConn) encryptIfNeeded(block *block) []byte {
 // decryptIfNeeded checks and strips the mac and decrypts the data in b.
 // Returns error if parsing failed
 
-func (h *halfConn) decryptIfNeeded(b *block) (data []byte, err error) {
+func (h *halfConn) decryptIfNeeded(b *packet) (data []byte, err error) {
 
 	if len(b.data) < (uint16Size * 3) {
 		return nil, errors.New("packet is too small")
@@ -83,11 +83,11 @@ func (h *halfConn) setErrorLocked(err error) error {
 	return err
 }
 
-// newBlock allocates a new block, from hc's free list if possible.
-func (h *halfConn) newBlock() *block {
+// newBlock allocates a new packet, from hc's free list if possible.
+func (h *halfConn) newBlock() *packet {
 	b := h.bfree
 	if b == nil {
-		return new(block)
+		return new(packet)
 
 	}
 	h.bfree = b.link
@@ -97,20 +97,20 @@ func (h *halfConn) newBlock() *block {
 	return b
 }
 
-// freeBlock returns a block to hc's free list.
-// The protocol is such that each side only has a block or two on
+// freeBlock returns a packet to hc's free list.
+// The protocol is such that each side only has a packet or two on
 // its free list at a time, so there's no need to worry about
 // trimming the list, etc.
-func (h *halfConn) freeBlock(b *block) {
+func (h *halfConn) freeBlock(b *packet) {
 	b.link = h.bfree
 	h.bfree = b
 
 }
 
-// splitBlock splits a block after the first n bytes,
-// returning a block with those n bytes and a
-// block with the remainder.  the latter may be nil.
-func (h *halfConn) splitBlock(b *block, n int) (*block, *block) {
+// splitBlock splits a packet after the first n bytes,
+// returning a packet with those n bytes and a
+// packet with the remainder.  the latter may be nil.
+func (h *halfConn) splitBlock(b *packet, n int) (*packet, *packet) {
 	if len(b.data) <= n {
 		return b, nil
 	}

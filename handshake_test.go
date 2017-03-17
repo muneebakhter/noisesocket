@@ -18,10 +18,10 @@ func TestHandshake(t *testing.T) {
 	payload := make([]byte, 500)
 	rand.Read(payload)
 
-	hm, _, istates, err := ComposeInitiatorHandshakeMessages(ki, nil, payload)
+	hm, _, istates, err := ComposeInitiatorHandshakeMessages(ki, nil, payload, nil)
 	assert.NoError(t, err)
 
-	_, rstate, index, err := ParseHandshake(ks, hm, -1)
+	_, rstate, _, index, err := ParseHandshake(ks, hm, -1, nil)
 	assert.NoError(t, err)
 	//assert.Equal(t, payload, parsedPayload)
 

@@ -16,7 +16,7 @@ type field struct {
 	Data []byte
 }
 
-func ParseMessages(payload []byte) ([]*field, error) {
+func parseMessageFields(payload []byte) ([]*field, error) {
 
 	if len(payload) < msgHeaderSize {
 		return nil, errors.New("payload too small")
