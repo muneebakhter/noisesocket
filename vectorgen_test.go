@@ -16,8 +16,7 @@ import (
 )
 
 type Vector struct {
-	Name string `json:"name"`
-
+	Name             string     `json:"name"`
 	Prologue         string     `json:"init_prologue"`
 	InitStatic       string     `json:"init_static"`
 	InitEphemeral    string     `json:"init_ephemeral"`
@@ -25,6 +24,7 @@ type Vector struct {
 	RespStatic       string     `json:"resp_static"`
 	RespEphemeral    string     `json:"resp_ephemeral"`
 	InitialMessage   string     `json:"initial_message"`
+	Protocols        []string   `json:"protocols"`
 	Sessions         []*Session `json:"sessions"`
 }
 
@@ -40,9 +40,9 @@ type Session struct {
 }
 
 type Message struct {
-	Payload    string            `json:"payload"`
-	Fields     map[uint16]string `json:"fields"`
-	Ciphertext string            `json:"ciphertext"`
+	Payload string            `json:"payload"`
+	Fields  map[uint16]string `json:"fields"`
+	Raw     string            `json:"raw"`
 }
 
 func TestVectors(t *testing.T) {
@@ -78,6 +78,15 @@ func TestVectors(t *testing.T) {
 		panic(err)
 	}
 	vec.Prologue = hex.EncodeToString(prologue)
+
+	for _, pattern := range []noise.HandshakePattern{noise.HandshakeXX, noise.HandshakeIK} {
+
+		for _, csp := range protoCipherPriorities[pattern.Name] {
+			cfg := handshakeConfigs[csp]
+			vec.Protocols = append(vec.Protocols, fmt.Sprintf("%s", cfg.Name))
+
+		}
+	}
 
 	pkt = InitializePacket()
 
@@ -150,7 +159,7 @@ func TestVectors(t *testing.T) {
 		binary.BigEndian.PutUint16(pkt.data, uint16(len(pkt.data)-2))
 
 		msg = &Message{
-			Ciphertext: hex.EncodeToString(pkt.data),
+			Raw: hex.EncodeToString(pkt.data),
 		}
 		sess.HandshakeMessages = append(sess.HandshakeMessages, msg)
 		sender := rstate
@@ -198,9 +207,14 @@ func TestVectors(t *testing.T) {
 					pktr.AddField(dr, MessageTypeData)
 					pktr.AddPadding(10)
 
+					msg = &Message{
+						Payload: hex.EncodeToString(pktr.data[2:]),
+					}
+
 					pktr.data = cs2r.Encrypt(pktr.data[:2], nil, pktr.data[2:])
 					binary.BigEndian.PutUint16(pktr.data, uint16(len(pktr.data)-2))
 
+					msg.Raw = hex.EncodeToString(pktr.data)
 					//fmt.Println(hex.EncodeToString(pktr.data))
 					di, err = cs2i.Decrypt(pktr.data[:0], nil, pktr.data[2:])
 					if err != nil {
@@ -208,13 +222,22 @@ func TestVectors(t *testing.T) {
 					}
 
 					fields, err := parseMessageFields(di)
-					for _, f := range fields {
-						fmt.Println(f.Type, hex.EncodeToString(f.Data))
-					}
+					flds := make(map[uint16]string)
 
+					for _, v := range fields {
+						flds[v.Type] = hex.EncodeToString(v.Data)
+					}
+					msg.Fields = flds
+
+					sess.TransportMessages = append(sess.TransportMessages, msg)
+
+					msg = &Message{
+						Payload: hex.EncodeToString(pkti.data[2:]),
+					}
 					pkti.data = cs1i.Encrypt(pkti.data[:2], nil, pkti.data[2:])
 					binary.BigEndian.PutUint16(pkti.data, uint16(len(pkti.data)-2))
 
+					msg.Raw = hex.EncodeToString(pkti.data)
 					//fmt.Println(hex.EncodeToString(pkti.data))
 
 					dr, err = cs1r.Decrypt(pkti.data[:0], nil, pkti.data[2:])
@@ -222,14 +245,17 @@ func TestVectors(t *testing.T) {
 						panic(err)
 					}
 					fields, err = parseMessageFields(dr)
-					for _, f := range fields {
-						fmt.Println(f.Type, hex.EncodeToString(f.Data))
+					flds = make(map[uint16]string)
+
+					for _, v := range fields {
+						flds[v.Type] = hex.EncodeToString(v.Data)
 					}
+					msg.Fields = flds
+
+					sess.TransportMessages = append(sess.TransportMessages, msg)
 
 				}
 
-				fmt.Println()
-				fmt.Println()
 				break
 
 			} else {
@@ -244,7 +270,7 @@ func TestVectors(t *testing.T) {
 				pkt.data = append(pkt.data, hsm...)
 				binary.BigEndian.PutUint16(pkt.data, uint16(len(pkt.data)-2))
 				msg = &Message{
-					Ciphertext: hex.EncodeToString(pkt.data),
+					Raw: hex.EncodeToString(pkt.data),
 				}
 				sess.HandshakeMessages = append(sess.HandshakeMessages, msg)
 
