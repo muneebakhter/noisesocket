@@ -402,10 +402,15 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
-	msg = msg[0:2]
+	if len(hs.PeerStatic()) > 0 { //we answer to IK
+		msg = msg[0:2]
 
-	msg[0] = index
-	msg[1] = 0 // xx_fallback is not supported yet
+		msg[0] = index
+		msg[1] = 0 // xx_fallback is not supported yet
+	} else { //answer to XX
+		msg = msg[0:1]
+		msg[0] = index
+	}
 
 	//server can safely answer with payload as both XX and IK encrypt it
 
