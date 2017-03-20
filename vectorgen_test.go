@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 
 	"github.com/flynn/noise"
+	"github.com/stretchr/testify/assert"
 )
 
 type Vector struct {
@@ -29,54 +30,56 @@ type Vector struct {
 }
 
 type Session struct {
-	Index             byte       `json:"index"`
-	Pattern           string     `json:"pattern"`
-	Dh                string     `json:"dh"`
-	Cipher            string     `json:"cipher"`
-	Hash              string     `json:"hash"`
-	HandshakeHash     string     `json:"handshake_hash"`
-	HandshakeMessages []*Message `json:"handshake_messages"`
-	TransportMessages []*Message `json:"transport_messages"`
+	Index         byte       `json:"index"`
+	Pattern       string     `json:"pattern"`
+	Dh            string     `json:"dh"`
+	Cipher        string     `json:"cipher"`
+	Hash          string     `json:"hash"`
+	HandshakeHash string     `json:"handshake_hash"`
+	Messages      []*Message `json:"messages"`
 }
 
 type Message struct {
-	Payload string            `json:"payload"`
-	Fields  map[uint16]string `json:"fields"`
-	Raw     string            `json:"raw"`
+	Payload string         `json:"payload"`
+	Fields  []*VectorField `json:"fields"`
+	Packet  string         `json:"packet,omitempty"`
 }
 
-func TestVectors(t *testing.T) {
+type VectorField struct {
+	Type uint16
+	Data string
+}
 
-	si, sr, ei, er := make([]byte, 0, 32), make([]byte, 0, 32), make([]byte, 0, 32), make([]byte, 0, 32)
+func TestGenerateVectors(t *testing.T) {
+
+	is, rs, ie, re := make([]byte, 0, 32), make([]byte, 0, 32), make([]byte, 0, 32), make([]byte, 0, 32)
 	for i := byte(0); i < 32; i++ {
-		ei = append(ei, i%2)
-		er = append(er, i%3)
-		si = append(si, i%4)
-		sr = append(sr, i%5)
+		ie = append(ie, i%2)
+		re = append(re, i%3)
+		is = append(is, i%4)
+		rs = append(rs, i%5)
 	}
 
-	ki := noise.DH25519.GenerateKeypair(bytes.NewBuffer(si))
-	kr := noise.DH25519.GenerateKeypair(bytes.NewBuffer(sr))
+	ki := noise.DH25519.GenerateKeypair(bytes.NewBuffer(is))
+	kr := noise.DH25519.GenerateKeypair(bytes.NewBuffer(rs))
 
 	clientCert := []byte(`{owner:"alice@client.com"}`)
 	serverCert := []byte(`{owner:"bob@server.com"}`)
 
 	vec := &Vector{
 		Name:             "NoiseSocket",
-		InitEphemeral:    hex.EncodeToString(ei),
-		InitStatic:       hex.EncodeToString(si),
+		InitEphemeral:    hex.EncodeToString(ie),
+		InitStatic:       hex.EncodeToString(is),
 		InitRemoteStatic: hex.EncodeToString(kr.Public),
-		RespEphemeral:    hex.EncodeToString(er),
-		RespStatic:       hex.EncodeToString(sr),
+		RespEphemeral:    hex.EncodeToString(re),
+		RespStatic:       hex.EncodeToString(rs),
 	}
 
 	pkt := new(packet)
 	pkt.AddField(clientCert, MessageTypeCustomCert)
 
-	ihm, prologue, iStates, err := ComposeInitiatorHandshakeMessages(ki, kr.Public, pkt.data, ei)
-	if err != nil {
-		panic(err)
-	}
+	ihm, prologue, iStates, err := ComposeInitiatorHandshakeMessages(ki, kr.Public, pkt.data, ie)
+	assert.NoError(t, err)
 	vec.Prologue = hex.EncodeToString(prologue)
 
 	for _, pattern := range []noise.HandshakePattern{noise.HandshakeXX, noise.HandshakeIK} {
@@ -89,22 +92,15 @@ func TestVectors(t *testing.T) {
 	}
 
 	pkt = InitializePacket()
-
-	pkt.resize(len(pkt.data) + len(ihm))
-	copy(pkt.data[uint16Size:len(pkt.data)], ihm)
+	pkt.data = append(pkt.data, ihm...)
 	binary.BigEndian.PutUint16(pkt.data, uint16(len(ihm)))
 
 	vec.InitialMessage = hex.EncodeToString(pkt.data)
 
 	//sequetially choose sub-message from the first message
 	for i, istate := range iStates {
-		parsedPayload, rstate, cfg, msgIndex, err := ParseHandshake(kr, ihm, i, er)
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Println("chosen index", msgIndex)
-		fmt.Printf("%s\n", cfg.Name)
+		parsedPayload, rstate, cfg, msgIndex, err := ParseHandshake(kr, ihm, i, re)
+		assert.NoError(t, err)
 
 		sess := &Session{
 			Index:   msgIndex,
@@ -119,25 +115,18 @@ func TestVectors(t *testing.T) {
 
 		if len(parsedPayload) > 0 {
 
+			//server reads client's message
 			fields, err := parseMessageFields(parsedPayload)
-			if err != nil {
-				panic(err)
-			}
-
-			flds := make(map[uint16]string)
-
-			for _, v := range fields {
-				flds[v.Type] = hex.EncodeToString(v.Data)
-			}
+			assert.NoError(t, err)
 
 			msg = &Message{
 				Payload: hex.EncodeToString(parsedPayload),
-				Fields:  flds,
+				Fields:  fieldsToVector(fields),
 			}
 
 		}
 
-		sess.HandshakeMessages = append(sess.HandshakeMessages, msg)
+		sess.Messages = append(sess.Messages, msg)
 
 		pkt = InitializePacket() // 2 bytes for length
 
@@ -154,44 +143,34 @@ func TestVectors(t *testing.T) {
 		payload := new(packet)
 		payload.AddField(serverCert, MessageTypeCustomCert)
 
+		//server responds
 		hsm, cs1r, cs2r = rstate.WriteMessage(nil, payload.data)
 		pkt.data = append(pkt.data, hsm...)
 		binary.BigEndian.PutUint16(pkt.data, uint16(len(pkt.data)-2))
 
 		msg = &Message{
-			Raw: hex.EncodeToString(pkt.data),
+			Packet: hex.EncodeToString(pkt.data),
 		}
-		sess.HandshakeMessages = append(sess.HandshakeMessages, msg)
+		sess.Messages = append(sess.Messages, msg)
 		sender := rstate
 		receiver := istate
 
+		//loop until handshake is done
 		for {
 
 			parsedPayload, cs1i, cs2i, err = receiver.ReadMessage(nil, hsm)
-
-			if err != nil {
-				panic(err)
-			}
+			assert.NoError(t, err)
 
 			if len(parsedPayload) > 0 {
 				msg.Payload = hex.EncodeToString(parsedPayload)
 				fields, err := parseMessageFields(parsedPayload)
-				if err != nil {
-					panic(err)
-				}
-				flds := make(map[uint16]string)
+				assert.NoError(t, err)
 
-				for _, v := range fields {
-					flds[v.Type] = hex.EncodeToString(v.Data)
-				}
-				msg.Fields = flds
-				//sess.HandshakeMessages = append(sess.HandshakeMessages, msg)
+				msg.Fields = fieldsToVector(fields)
 			}
 
 			if cs1r != nil && cs2r != nil && cs1i != nil && cs2i != nil {
-				fmt.Println(len(sess.HandshakeMessages))
 				sess.HandshakeHash = hex.EncodeToString(receiver.ChannelBinding())
-				fmt.Println("Transport messages GO")
 				for j := 0; j < 2; j++ {
 					di := make([]byte, 11)
 					dr := make([]byte, 13)
@@ -208,51 +187,39 @@ func TestVectors(t *testing.T) {
 					pktr.AddPadding(10)
 
 					msg = &Message{
+						Payload: hex.EncodeToString(pkti.data[2:]),
+					}
+					pkti.data = cs1i.Encrypt(pkti.data[:2], nil, pkti.data[2:])
+					binary.BigEndian.PutUint16(pkti.data, uint16(len(pkti.data)-2))
+
+					msg.Packet = hex.EncodeToString(pkti.data)
+					//fmt.Println(hex.EncodeToString(pkti.data))
+
+					dr, err = cs1r.Decrypt(pkti.data[:0], nil, pkti.data[2:])
+					assert.NoError(t, err)
+					fields, err := parseMessageFields(dr)
+
+					msg.Fields = fieldsToVector(fields)
+
+					sess.Messages = append(sess.Messages, msg)
+
+					msg = &Message{
 						Payload: hex.EncodeToString(pktr.data[2:]),
 					}
 
 					pktr.data = cs2r.Encrypt(pktr.data[:2], nil, pktr.data[2:])
 					binary.BigEndian.PutUint16(pktr.data, uint16(len(pktr.data)-2))
 
-					msg.Raw = hex.EncodeToString(pktr.data)
+					msg.Packet = hex.EncodeToString(pktr.data)
 					//fmt.Println(hex.EncodeToString(pktr.data))
 					di, err = cs2i.Decrypt(pktr.data[:0], nil, pktr.data[2:])
-					if err != nil {
-						panic(err)
-					}
+					assert.NoError(t, err)
 
-					fields, err := parseMessageFields(di)
-					flds := make(map[uint16]string)
+					fields, err = parseMessageFields(di)
 
-					for _, v := range fields {
-						flds[v.Type] = hex.EncodeToString(v.Data)
-					}
-					msg.Fields = flds
+					msg.Fields = fieldsToVector(fields)
 
-					sess.TransportMessages = append(sess.TransportMessages, msg)
-
-					msg = &Message{
-						Payload: hex.EncodeToString(pkti.data[2:]),
-					}
-					pkti.data = cs1i.Encrypt(pkti.data[:2], nil, pkti.data[2:])
-					binary.BigEndian.PutUint16(pkti.data, uint16(len(pkti.data)-2))
-
-					msg.Raw = hex.EncodeToString(pkti.data)
-					//fmt.Println(hex.EncodeToString(pkti.data))
-
-					dr, err = cs1r.Decrypt(pkti.data[:0], nil, pkti.data[2:])
-					if err != nil {
-						panic(err)
-					}
-					fields, err = parseMessageFields(dr)
-					flds = make(map[uint16]string)
-
-					for _, v := range fields {
-						flds[v.Type] = hex.EncodeToString(v.Data)
-					}
-					msg.Fields = flds
-
-					sess.TransportMessages = append(sess.TransportMessages, msg)
+					sess.Messages = append(sess.Messages, msg)
 
 				}
 
@@ -270,9 +237,9 @@ func TestVectors(t *testing.T) {
 				pkt.data = append(pkt.data, hsm...)
 				binary.BigEndian.PutUint16(pkt.data, uint16(len(pkt.data)-2))
 				msg = &Message{
-					Raw: hex.EncodeToString(pkt.data),
+					Packet: hex.EncodeToString(pkt.data),
 				}
-				sess.HandshakeMessages = append(sess.HandshakeMessages, msg)
+				sess.Messages = append(sess.Messages, msg)
 
 			}
 
@@ -287,4 +254,16 @@ func InitializePacket() *packet {
 	block := new(packet)
 	block.resize(uint16Size)
 	return block
+}
+
+func fieldsToVector(fields []*Field) []*VectorField {
+	flds := make([]*VectorField, 0, len(fields))
+
+	for _, v := range fields {
+		flds = append(flds, &VectorField{
+			Type: v.Type,
+			Data: hex.EncodeToString(v.Data),
+		})
+	}
+	return flds
 }

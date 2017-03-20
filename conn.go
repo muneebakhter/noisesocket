@@ -34,7 +34,7 @@ type Conn struct {
 
 // Access to net.Conn methods.
 // Cannot just embed net.Conn because that would
-// export the struct field too.
+// export the struct Field too.
 
 // LocalAddr returns the local network address.
 func (c *Conn) LocalAddr() net.Addr {
