@@ -14,7 +14,7 @@ func Server(conn net.Conn, key noise.DHKey, payload []byte) *Conn {
 	return &Conn{
 		conn:    conn,
 		myKeys:  key,
-		padding: 128,
+		padding: 0,
 		payload: payload,
 	}
 }
@@ -29,7 +29,7 @@ func Client(conn net.Conn, key noise.DHKey, serverKey []byte, payload []byte) *C
 		myKeys:   key,
 		PeerKey:  serverKey,
 		isClient: true,
-		padding:  128,
+		padding:  0,
 		payload:  payload,
 	}
 }

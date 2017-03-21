@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"time"
 
 	"os"
 
@@ -17,6 +16,8 @@ import (
 	"io/ioutil"
 
 	"log"
+
+	"time"
 
 	"github.com/flynn/noise"
 	"gopkg.in/noisesocket.v0"
@@ -35,10 +36,12 @@ func main() {
 
 func startNoiseSocketServer() {
 	server := &http.Server{
-		Addr:         *listen,
-		ReadTimeout:  1 * time.Minute,
-		WriteTimeout: 1 * time.Minute,
+		Addr:        *listen,
+		ReadTimeout: 1 * time.Second,
+		//WriteTimeout: 1 * time.Second,
+
 	}
+	server.SetKeepAlivesEnabled(false)
 
 	buf := make([]byte, 2048*2+17) //send 4113 bytes
 	rand.Read(buf)
@@ -63,8 +66,6 @@ func startNoiseSocketServer() {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)
 	}
-	// Close the listener when the application closes.
-	defer l.Close()
 
 	fmt.Println("Starting server...")
 	if err := server.Serve(l); err != nil {

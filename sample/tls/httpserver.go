@@ -26,8 +26,8 @@ var (
 func main() {
 	server := &http.Server{
 		Addr:         *listen,
-		ReadTimeout:  1 * time.Minute,
-		WriteTimeout: 1 * time.Minute,
+		ReadTimeout:  1 * time.Second,
+		WriteTimeout: 1 * time.Second,
 	}
 
 	buf := make([]byte, 2048*2+17) //send 4113 bytes

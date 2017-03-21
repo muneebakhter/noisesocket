@@ -14,14 +14,15 @@ import (
 func main() {
 
 	t := time.Now()
-	n := 10000
-	buf := make([]byte, 20048+8)
+	n := 1000
+	buf := make([]byte, 55)
 	rand.Read(buf)
 	c := make(chan bool, 10)
 
-	threads := 10
+	threads := 100
 
 	transport := &http.Transport{
+		DisableKeepAlives:   true,
 		MaxIdleConnsPerHost: threads,
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 	}
