@@ -9,8 +9,6 @@ import (
 
 	"math"
 
-	"fmt"
-
 	"github.com/flynn/noise"
 	"github.com/pkg/errors"
 )
@@ -131,6 +129,7 @@ func (c *Conn) writePacketLocked(data []byte) (int, error) {
 		if _, err := c.conn.Write(b); err != nil {
 			return n, err
 		}
+
 		n += m
 		data = data[m:]
 	}
@@ -467,7 +466,7 @@ func (c *Conn) RunServerHandshake() error {
 
 func processPayload(payload []byte) error {
 	if len(payload) > 0 {
-		msgs, err := parseMessageFields(payload)
+		/*msgs, err := parseMessageFields(payload)
 
 		if err != nil {
 			return err
@@ -475,7 +474,7 @@ func processPayload(payload []byte) error {
 
 		for _, m := range msgs {
 			fmt.Println(m.Type)
-		}
+		}*/
 	}
 	return nil
 }
