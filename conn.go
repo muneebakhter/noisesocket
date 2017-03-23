@@ -9,6 +9,8 @@ import (
 
 	"math"
 
+	"sync/atomic"
+
 	"github.com/flynn/noise"
 	"github.com/pkg/errors"
 )
@@ -28,6 +30,14 @@ type Conn struct {
 	rawInput          *packet
 	padding           uint16
 	payload           []byte
+	// activeCall is an atomic int32; the low bit is whether Close has
+	// been called. the rest of the bits are the number of goroutines
+	// in Conn.Write.
+	activeCall int32
+	// handshakeCond, if not nil, indicates that a goroutine is committed
+	// to running the handshake for this Conn. Other goroutines that need
+	// to wait for the handshake can wait on this, under handshakeMutex.
+	handshakeCond *sync.Cond
 }
 
 // Access to net.Conn methods.
@@ -64,7 +74,23 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
 
+var (
+	errClosed   = errors.New("tls: use of closed connection")
+	errShutdown = errors.New("tls: protocol is shutdown")
+)
+
 func (c *Conn) Write(b []byte) (int, error) {
+	// interlock with Close below
+	for {
+		x := atomic.LoadInt32(&c.activeCall)
+		if x&1 != 0 {
+			return 0, errClosed
+		}
+		if atomic.CompareAndSwapInt32(&c.activeCall, x, x+2) {
+			defer atomic.AddInt32(&c.activeCall, -2)
+			break
+		}
+	}
 
 	if err := c.Handshake(); err != nil {
 		return 0, err
@@ -80,7 +106,8 @@ func (c *Conn) Write(b []byte) (int, error) {
 		return 0, errors.New("internal error")
 	}
 
-	return c.writePacketLocked(b)
+	n, err := c.writePacketLocked(b)
+	return n, c.out.setErrorLocked(err)
 }
 
 func (c *Conn) writePacket(data []byte) (int, error) {
@@ -180,6 +207,19 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		c.in.freeBlock(c.input)
 		c.input = nil
 	}
+
+	if ri := c.rawInput; ri != nil &&
+		n != 0 && err == nil &&
+		c.input == nil && len(ri.data) > 0 {
+		if recErr := c.readPacket(); recErr != nil {
+			err = recErr // will be io.EOF on closeNotify
+		}
+	}
+
+	if n != 0 || err != nil {
+		return n, err
+	}
+
 	return n, err
 }
 
@@ -195,6 +235,9 @@ func (c *Conn) readPacket() error {
 
 	// Read header, payload.
 	if err := b.readFromUntil(c.conn, uint16Size); err != nil {
+		if e, ok := err.(net.Error); !ok || !e.Temporary() {
+			c.in.setErrorLocked(err)
+		}
 		return err
 	}
 
@@ -204,11 +247,13 @@ func (c *Conn) readPacket() error {
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
+		if e, ok := err.(net.Error); !ok || !e.Temporary() {
+			c.in.setErrorLocked(err)
+		}
 		return err
 	}
 
 	b, c.rawInput = c.in.splitBlock(b, uint16Size+n)
-	defer c.in.freeBlock(b)
 
 	payload, err := c.in.decryptIfNeeded(b)
 	if err != nil {
@@ -233,7 +278,7 @@ func (c *Conn) readPacket() error {
 		in.resize(len(payload))
 		copy(in.data, payload)
 	}
-
+	c.in.freeBlock(b)
 	c.input = in
 	return c.in.err
 }
@@ -241,6 +286,26 @@ func (c *Conn) readPacket() error {
 // Close closes the connection.
 // Any blocked Read or Write operations will be unblocked and return errors.
 func (c *Conn) Close() error {
+	// Interlock with Conn.Write above.
+	var x int32
+	for {
+		x = atomic.LoadInt32(&c.activeCall)
+		if x&1 != 0 {
+			return errClosed
+		}
+		if atomic.CompareAndSwapInt32(&c.activeCall, x, x|1) {
+			break
+		}
+	}
+	if x != 0 {
+		// io.Writer and io.Closer should not be used concurrently.
+		// If Close is called while a Write is currently in-flight,
+		// interpret that as a sign that this Close is really just
+		// being used to break the Write and/or clean up resources and
+		// avoid sending the alertCloseNotify, which may block
+		// waiting on handshakeMutex or the c.out mutex.
+		return c.conn.Close()
+	}
 	return c.conn.Close()
 }
 
@@ -249,8 +314,6 @@ func (c *Conn) Close() error {
 // Most uses of this package need not call Handshake
 // explicitly: the first Read or Write will call it automatically.
 func (c *Conn) Handshake() error {
-	c.handshakeMutex.Lock()
-	defer c.handshakeMutex.Unlock()
 	// c.handshakeErr and c.handshakeComplete are protected by
 	// c.handshakeMutex. In order to perform a handshake, we need to lock
 	// c.in also and c.handshakeMutex must be locked after c.in.
@@ -258,32 +321,58 @@ func (c *Conn) Handshake() error {
 	// However, if a Read() operation is hanging then it'll be holding the
 	// lock on c.in and so taking it here would cause all operations that
 	// need to check whether a handshake is pending (such as Write) to
-	// packet.
+	// block.
 	//
-	// Thus we take c.handshakeMutex first and, if we find that a handshake
-	// is needed, then we unlock, acquire c.in and c.handshakeMutex in the
-	// correct order, and check again.
-	for i := 0; i < 2; i++ {
-		if i == 1 {
-			c.handshakeMutex.Unlock()
-			c.in.Lock()
-			defer c.in.Unlock()
-			c.handshakeMutex.Lock()
-		}
+	// Thus we first take c.handshakeMutex to check whether a handshake is
+	// needed.
+	//
+	// If so then, previously, this code would unlock handshakeMutex and
+	// then lock c.in and handshakeMutex in the correct order to run the
+	// handshake. The problem was that it was possible for a Read to
+	// complete the handshake once handshakeMutex was unlocked and then
+	// keep c.in while waiting for network data. Thus a concurrent
+	// operation could be blocked on c.in.
+	//
+	// Thus handshakeCond is used to signal that a goroutine is committed
+	// to running the handshake and other goroutines can wait on it if they
+	// need. handshakeCond is protected by handshakeMutex.
+	c.handshakeMutex.Lock()
+	defer c.handshakeMutex.Unlock()
 
+	for {
 		if err := c.handshakeErr; err != nil {
 			return err
 		}
 		if c.handshakeComplete {
 			return nil
 		}
+		if c.handshakeCond == nil {
+			break
+		}
+
+		c.handshakeCond.Wait()
 	}
+
+	// Set handshakeCond to indicate that this goroutine is committing to
+	// running the handshake.
+	c.handshakeCond = sync.NewCond(&c.handshakeMutex)
+	c.handshakeMutex.Unlock()
+
+	c.in.Lock()
+	defer c.in.Unlock()
+
+	c.handshakeMutex.Lock()
 
 	if c.isClient {
 		c.handshakeErr = c.RunClientHandshake()
 	} else {
 		c.handshakeErr = c.RunServerHandshake()
 	}
+	// Wake any other goroutines that are waiting for this handshake to
+	// complete.
+	c.handshakeCond.Broadcast()
+	c.handshakeCond = nil
+
 	return c.handshakeErr
 }
 
@@ -328,13 +417,17 @@ func (c *Conn) RunClientHandshake() error {
 	}
 
 	hs := states[msg[0]]
-	mType := msg[1]
+	offset := 1
+	if len(hs.PeerStatic()) > 0 {
+		mType := msg[1]
 
-	if mType != 0 {
-		return errors.New("Only pure IK is supported")
+		if mType != 0 {
+			return errors.New("Only pure IK is supported")
+		}
+		offset = 2
 	}
 
-	if payload, csIn, csOut, err = hs.ReadMessage(msg[:0], msg[2:]); err != nil {
+	if payload, csIn, csOut, err = hs.ReadMessage(msg[:0], msg[offset:]); err != nil {
 		return err
 	}
 
@@ -343,11 +436,10 @@ func (c *Conn) RunClientHandshake() error {
 	}
 
 	for csIn == nil && csOut == nil {
-		msg = msg[:0]
 		if len(c.PeerKey) == 0 {
-			msg, csIn, csOut = hs.WriteMessage(msg, payload)
+			msg, csIn, csOut = hs.WriteMessage(msg[:0], payload)
 		} else {
-			msg, csIn, csOut = hs.WriteMessage(msg, nil)
+			msg, csIn, csOut = hs.WriteMessage(msg[:0], nil)
 		}
 
 		if _, err = c.writePacket(msg); err != nil {
@@ -401,14 +493,11 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
+	msg = msg[:1]
+	msg[0] = index
 	if len(hs.PeerStatic()) > 0 { //we answer to IK
-		msg = msg[0:2]
 
-		msg[0] = index
-		msg[1] = 0 // xx_fallback is not supported yet
-	} else { //answer to XX
-		msg = msg[0:1]
-		msg[0] = index
+		msg = append(msg, 0) // xx_fallback is not supported yet
 	}
 
 	//server can safely answer with payload as both XX and IK encrypt it
@@ -447,8 +536,7 @@ func (c *Conn) RunServerHandshake() error {
 			break
 		}
 
-		msg = msg[:0]
-		msg, csOut, csIn = hs.WriteMessage(msg, c.payload)
+		msg, csOut, csIn = hs.WriteMessage(msg[:0], c.payload)
 		_, err = c.writePacket(msg)
 
 		if err != nil {

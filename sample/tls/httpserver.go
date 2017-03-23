@@ -29,6 +29,7 @@ func main() {
 		ReadTimeout:  1 * time.Second,
 		WriteTimeout: 1 * time.Second,
 	}
+	server.SetKeepAlivesEnabled(false)
 
 	buf := make([]byte, 2048*2+17) //send 4113 bytes
 	rand.Read(buf)

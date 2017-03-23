@@ -29,7 +29,7 @@ var (
 
 func main() {
 
-	go startHttpServer()
+	//go startHttpServer()
 	startNoiseSocketServer()
 
 }
@@ -38,7 +38,7 @@ func startNoiseSocketServer() {
 	server := &http.Server{
 		Addr:        *listen,
 		ReadTimeout: 1 * time.Second,
-		//WriteTimeout: 1 * time.Second,
+		WriteTimeout: 1 * time.Second,
 
 	}
 	server.SetKeepAlivesEnabled(false)

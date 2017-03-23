@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sort"
+	"sync"
 	"time"
 )
 
@@ -19,15 +21,38 @@ func main() {
 	rand.Read(buf)
 	c := make(chan bool, 10)
 
-	threads := 100
+	threads := 20
 
 	transport := &http.Transport{
-		DisableKeepAlives:   true,
-		MaxIdleConnsPerHost: threads,
+		DisableKeepAlives:   false,
+		MaxIdleConnsPerHost: 1,
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 	}
+
+	stats := make(map[int]int)
+	mu := sync.Mutex{}
+	go func(stats map[int]int) {
+
+		for {
+			time.Sleep(time.Second * 1)
+			mu.Lock()
+			var keys []int
+			for k := range stats {
+				keys = append(keys, k)
+			}
+			sort.Ints(keys)
+
+			for _, k := range keys {
+				fmt.Printf("%d:%d ", k, stats[k])
+			}
+			fmt.Println()
+			mu.Unlock()
+
+		}
+	}(stats)
+
 	for j := 0; j < threads; j++ {
-		go func() {
+		go func(t int) {
 
 			cli := &http.Client{
 				Transport: transport,
@@ -52,9 +77,13 @@ func main() {
 				if err != nil {
 					panic(err)
 				}
+				mu.Lock()
+				stats[t] = i
+				mu.Unlock()
 			}
+			fmt.Println("donedone", t)
 			c <- true
-		}()
+		}(j)
 	}
 
 	for j := 0; j < threads; j++ {

@@ -21,11 +21,11 @@ import (
 func main() {
 
 	t := time.Now()
-	n := 10000
+	n := 1000
 	buf := make([]byte, 55)
 	rand.Read(buf)
 
-	threads := 5
+	threads := 20
 
 	c := make(chan bool, threads)
 
@@ -59,6 +59,7 @@ func main() {
 	go func(stats map[int]int) {
 
 		for {
+			time.Sleep(time.Second * 1)
 			mu.Lock()
 			var keys []int
 			for k := range stats {
@@ -66,28 +67,27 @@ func main() {
 			}
 			sort.Ints(keys)
 
-			// To perform the opertion you want
 			for _, k := range keys {
 				fmt.Printf("%d:%d ", k, stats[k])
 			}
 			fmt.Println()
 			mu.Unlock()
-			time.Sleep(time.Second * 2)
+
 		}
 	}(stats)
 
 	for j := 0; j < threads; j++ {
 		go func(t int) {
-
+			cli := &http.Client{
+				Transport: transport,
+			}
 			for i := 0; i < n; i++ {
 				reader := bytes.NewReader(buf)
 				req, err := http.NewRequest("POST", "https://127.0.0.1:12888/", reader)
 				if err != nil {
 					panic(err)
 				}
-				cli := &http.Client{
-					Transport: transport,
-				}
+
 				resp, err := cli.Do(req)
 				if err != nil {
 					fmt.Println(err)
