@@ -17,6 +17,8 @@ import (
 
 const MaxPayloadSize = math.MaxUint16
 
+type VerifyCallbackFunc func(publicKey []byte, fields []*Field) error
+
 type Conn struct {
 	conn              net.Conn
 	myKeys            noise.DHKey
@@ -29,7 +31,7 @@ type Conn struct {
 	input             *packet
 	rawInput          *packet
 	padding           uint16
-	payload           []byte
+	payload           []*Field
 	// activeCall is an atomic int32; the low bit is whether Close has
 	// been called. the rest of the bits are the number of goroutines
 	// in Conn.Write.
@@ -37,7 +39,8 @@ type Conn struct {
 	// handshakeCond, if not nil, indicates that a goroutine is committed
 	// to running the handshake for this Conn. Other goroutines that need
 	// to wait for the handshake can wait on this, under handshakeMutex.
-	handshakeCond *sync.Cond
+	handshakeCond  *sync.Cond
+	verifyCallback VerifyCallbackFunc
 }
 
 // Access to net.Conn methods.
@@ -387,7 +390,9 @@ func (c *Conn) RunClientHandshake() error {
 
 	b := c.out.newBlock()
 
-	b.AddField(c.payload, MessageTypeCustomCert)
+	for _, f := range c.payload {
+		b.AddField(f.Data, f.Type)
+	}
 
 	if msg, _, states, err = ComposeInitiatorHandshakeMessages(c.myKeys, c.PeerKey, b.data, nil); err != nil {
 		return err
@@ -431,7 +436,7 @@ func (c *Conn) RunClientHandshake() error {
 		return err
 	}
 
-	if err = processPayload(payload); err != nil {
+	if err = c.processPayload(hs.PeerStatic(), payload); err != nil {
 		return err
 	}
 
@@ -488,8 +493,7 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
-	err = processPayload(payload)
-	if err != nil {
+	if err = c.processPayload(hs.PeerStatic(), payload); err != nil {
 		return err
 	}
 
@@ -504,7 +508,9 @@ func (c *Conn) RunServerHandshake() error {
 
 	b := c.out.newBlock()
 
-	b.AddField(c.payload, MessageTypeCustomCert)
+	for _, f := range c.payload {
+		b.AddField(f.Data, f.Type)
+	}
 
 	msg, csOut, csIn := hs.WriteMessage(msg, b.data)
 	_, err = c.writePacket(msg)
@@ -530,13 +536,15 @@ func (c *Conn) RunServerHandshake() error {
 			return err
 		}
 
-		processPayload(payload)
+		if err = c.processPayload(hs.PeerStatic(), payload); err != nil {
+			return err
+		}
 
 		if csIn != nil && csOut != nil {
 			break
 		}
 
-		msg, csOut, csIn = hs.WriteMessage(msg[:0], c.payload)
+		msg, csOut, csIn = hs.WriteMessage(msg[:0], nil)
 		_, err = c.writePacket(msg)
 
 		if err != nil {
@@ -552,17 +560,15 @@ func (c *Conn) RunServerHandshake() error {
 	return nil
 }
 
-func processPayload(payload []byte) error {
-	if len(payload) > 0 {
-		/*msgs, err := parseMessageFields(payload)
+func (c *Conn) processPayload(publicKey []byte, payload []byte) error {
+	if len(payload) > 0 && c.verifyCallback != nil {
+		msgs, err := parseMessageFields(payload)
 
 		if err != nil {
 			return err
 		}
 
-		for _, m := range msgs {
-			fmt.Println(m.Type)
-		}*/
+		return c.verifyCallback(publicKey, msgs)
 	}
 	return nil
 }

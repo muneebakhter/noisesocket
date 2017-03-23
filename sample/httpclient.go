@@ -39,14 +39,18 @@ func main() {
 		Private: priv1,
 	}
 
-	payload := []byte(`{json:yes}111`)
+	payload := []*noisesocket.Field{{
+		Data: []byte(`{json:yes}111`),
+		Type: noisesocket.MessageTypeCustomCert,
+	},
+	}
 	stats := make(map[int]int)
 
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 1,
 		DisableKeepAlives:   true,
 		DialTLS: func(network, addr string) (net.Conn, error) {
-			conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, payload)
+			conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, payload, nil)
 			if err != nil {
 				fmt.Println("Dial", err)
 			}

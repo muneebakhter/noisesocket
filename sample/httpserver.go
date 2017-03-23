@@ -36,10 +36,9 @@ func main() {
 
 func startNoiseSocketServer() {
 	server := &http.Server{
-		Addr:        *listen,
-		ReadTimeout: 1 * time.Second,
+		Addr:         *listen,
+		ReadTimeout:  1 * time.Second,
 		WriteTimeout: 1 * time.Second,
-
 	}
 	server.SetKeepAlivesEnabled(false)
 
@@ -59,9 +58,13 @@ func startNoiseSocketServer() {
 		Private: priv,
 	}
 
-	payload := []byte(`{json:yesyes}`)
+	payload := []*noisesocket.Field{{
+		Data: []byte(`{json:yesyesesese}111`),
+		Type: noisesocket.MessageTypeCustomCert,
+	},
+	}
 
-	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload)
+	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload, nil)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)
