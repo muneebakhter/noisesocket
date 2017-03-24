@@ -20,8 +20,7 @@ func main() {
 		Public:  pub,
 		Private: priv,
 	}
-	payload := []byte(`{json:yesyes}`)
-	l, err := noisesocket.Listen("tcp", ":10000", serverKeys, payload)
+	l, err := noisesocket.Listen("tcp", ":10000", serverKeys, nil, nil)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)

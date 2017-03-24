@@ -24,7 +24,7 @@ func (l *listener) Accept() (net.Conn, error) {
 	return &Conn{
 		conn:           c,
 		myKeys:         l.key,
-		padding:        0,
+		padding:        128,
 		payload:        l.payload,
 		verifyCallback: l.verifyCallback,
 	}, nil
@@ -57,7 +57,7 @@ func Dial(network, addr string, key noise.DHKey, serverKey []byte, payload []*Fi
 		myKeys:         key,
 		PeerKey:        serverKey,
 		isClient:       true,
-		padding:        0,
+		padding:        128,
 		payload:        payload,
 		verifyCallback: callbackFunc,
 	}, nil

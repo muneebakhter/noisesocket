@@ -22,8 +22,7 @@ func main() {
 		Private: priv1,
 	}
 
-	payload := []byte(`{json:yes}111`)
-	conn, err := noisesocket.Dial("tcp", "127.0.0.1:10000", clientKeys, nil, payload)
+	conn, err := noisesocket.Dial("tcp", "127.0.0.1:10000", clientKeys, nil, nil, nil)
 	if err != nil {
 		panic(err)
 	}

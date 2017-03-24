@@ -9,7 +9,7 @@ const (
 	MessageTypePadding uint16 = iota
 	MessageTypeData
 	MessageTypeCustomCert = 1024
-	MessageTypeSignature  = 1024
+	MessageTypeSignature  = 1025
 )
 
 type Field struct {

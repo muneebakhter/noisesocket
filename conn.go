@@ -2,6 +2,7 @@ package noisesocket
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -398,26 +399,27 @@ func (c *Conn) RunClientHandshake() error {
 		return err
 	}
 
-	c.out.freeBlock(b)
-
 	if _, err = c.writePacket(msg); err != nil {
+		c.out.freeBlock(b)
 		return err
 	}
+	c.out.freeBlock(b)
 
 	if err := c.readPacket(); err != nil {
 		return err
 	}
 
-	msg = c.input.data[c.input.off:]
-
-	c.in.freeBlock(c.input)
-	c.input = nil
+	msg = c.input.data
 
 	if len(msg) < macSize {
+		c.in.freeBlock(c.input)
+		c.input = nil
 		return errors.New("message is too small")
 	}
 
 	if int(msg[0]) > (len(states) - 1) {
+		c.in.freeBlock(c.input)
+		c.input = nil
 		return errors.New("message index out of bounds")
 	}
 
@@ -427,46 +429,52 @@ func (c *Conn) RunClientHandshake() error {
 		mType := msg[1]
 
 		if mType != 0 {
+			c.in.freeBlock(c.input)
+			c.input = nil
 			return errors.New("Only pure IK is supported")
 		}
 		offset = 2
 	}
 
-	if payload, csIn, csOut, err = hs.ReadMessage(msg[:0], msg[offset:]); err != nil {
+	inblock := c.in.newBlock()
+	inblock.reserve(len(msg))
+	payload, csIn, csOut, err = hs.ReadMessage(inblock.data, msg[offset:])
+	if err != nil {
 		return err
 	}
+	c.in.freeBlock(inblock)
+	c.in.freeBlock(c.input)
+	c.input = nil
 
 	if err = c.processPayload(hs.PeerStatic(), payload); err != nil {
 		return err
 	}
 
-	for csIn == nil && csOut == nil {
+	if csIn == nil && csOut == nil {
+		b = c.out.newBlock()
 		if len(c.PeerKey) == 0 {
-			msg, csIn, csOut = hs.WriteMessage(msg[:0], payload)
+			outBlock := c.out.newBlock()
+			for _, f := range c.payload {
+				outBlock.AddField(f.Data, f.Type)
+			}
+			b.reserve(len(outBlock.data) + 128)
+			b.data, csIn, csOut = hs.WriteMessage(b.data, outBlock.data)
+			c.out.freeBlock(outBlock)
+
 		} else {
-			msg, csIn, csOut = hs.WriteMessage(msg[:0], nil)
+			b.data, csIn, csOut = hs.WriteMessage(b.data[:0], nil)
 		}
 
-		if _, err = c.writePacket(msg); err != nil {
+		if _, err = c.writePacket(b.data); err != nil {
+			c.out.freeBlock(b)
 			return err
 		}
+		c.out.freeBlock(b)
 
-		if csIn != nil && csOut != nil {
-			break
+		if csIn == nil || csOut == nil {
+			panic("not supported")
 		}
 
-		if err := c.readPacket(); err != nil {
-			return err
-		}
-
-		msg := c.input.data[c.input.off:]
-		_, csIn, csOut, err = hs.ReadMessage(msg[:0], msg)
-		c.in.freeBlock(c.input)
-		c.input = nil
-
-		if err != nil {
-			return err
-		}
 	}
 
 	c.in.cs = csIn
@@ -478,13 +486,12 @@ func (c *Conn) RunClientHandshake() error {
 
 func (c *Conn) RunServerHandshake() error {
 
+	var csOut, csIn *noise.CipherState
 	if err := c.readPacket(); err != nil {
 		return err
 	}
 
-	msg := c.input.data[c.input.off:]
-
-	payload, hs, _, index, err := ParseHandshake(c.myKeys, msg, -1, nil)
+	payload, hs, _, index, err := ParseHandshake(c.myKeys, c.input.data, -1, nil)
 
 	c.in.freeBlock(c.input)
 	c.input = nil
@@ -497,23 +504,27 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
-	msg = msg[:1]
-	msg[0] = index
+	b := c.out.newBlock()
+	b.resize(1)
+	b.data[0] = index
 	if len(hs.PeerStatic()) > 0 { //we answer to IK
-
-		msg = append(msg, 0) // xx_fallback is not supported yet
+		b.resize(2)
+		b.data[1] = 0 // xx_fallback is not supported yet
 	}
 
 	//server can safely answer with payload as both XX and IK encrypt it
+	off := len(b.data)
 
-	b := c.out.newBlock()
+	outBlock := c.out.newBlock()
 
 	for _, f := range c.payload {
-		b.AddField(f.Data, f.Type)
+		outBlock.AddField(f.Data, f.Type)
 	}
 
-	msg, csOut, csIn := hs.WriteMessage(msg, b.data)
-	_, err = c.writePacket(msg)
+	b.reserve(len(outBlock.data) + 128)
+	b.data, csOut, csIn = hs.WriteMessage(b.data[:off], outBlock.data)
+	c.out.freeBlock(outBlock)
+	_, err = c.writePacket(b.data)
 	c.out.freeBlock(b)
 
 	if err != nil {
@@ -526,10 +537,13 @@ func (c *Conn) RunServerHandshake() error {
 			return err
 		}
 
-		msg := c.input.data[c.input.off:]
-		payload, csOut, csIn, err = hs.ReadMessage(msg[:0], msg)
+		fmt.Println("got msg")
+		inBlock := c.in.newBlock()
+		inBlock.reserve(len(c.input.data))
+		payload, csOut, csIn, err = hs.ReadMessage(inBlock.data, c.input.data)
 
 		c.in.freeBlock(c.input)
+		c.in.freeBlock(inBlock)
 		c.input = nil
 
 		if err != nil {
@@ -544,9 +558,11 @@ func (c *Conn) RunServerHandshake() error {
 			break
 		}
 
-		msg, csOut, csIn = hs.WriteMessage(msg[:0], nil)
-		_, err = c.writePacket(msg)
-
+		b = c.out.newBlock()
+		b.reserve(128)
+		b.data, csOut, csIn = hs.WriteMessage(b.data[:0], nil)
+		_, err = c.writePacket(b.data)
+		c.out.freeBlock(b)
 		if err != nil {
 			return err
 		}

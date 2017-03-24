@@ -25,24 +25,29 @@ func main() {
 	buf := make([]byte, 55)
 	rand.Read(buf)
 
-	threads := 20
+	threads := 1
 
 	c := make(chan bool, threads)
 
 	pub1, _ := base64.StdEncoding.DecodeString("L9Xm5qy17ZZ6rBMd1Dsn5iZOyS7vUVhYK+zby1nJPEE=")
 	priv1, _ := base64.StdEncoding.DecodeString("TPmwb3vTEgrA3oq6PoGEzH5hT91IDXGC9qEMc8ksRiw=")
 
-	serverPub, _ := base64.StdEncoding.DecodeString("J6TRfRXR5skWt6w5cFyaBxX8LPeIVxboZTLXTMhk4HM=")
+	//serverPub, _ := base64.StdEncoding.DecodeString("J6TRfRXR5skWt6w5cFyaBxX8LPeIVxboZTLXTMhk4HM=")
 
 	clientKeys := noise.DHKey{
 		Public:  pub1,
 		Private: priv1,
 	}
 
-	payload := []*noisesocket.Field{{
-		Data: []byte(`{json:yes}111`),
-		Type: noisesocket.MessageTypeCustomCert,
-	},
+	payload := []*noisesocket.Field{
+		{
+			Data: []byte(`{json:yes}111`),
+			Type: noisesocket.MessageTypeCustomCert,
+		},
+		{
+			Data: []byte(`{json:yes}111`),
+			Type: noisesocket.MessageTypeSignature,
+		},
 	}
 	stats := make(map[int]int)
 
@@ -50,7 +55,7 @@ func main() {
 		MaxIdleConnsPerHost: 1,
 		DisableKeepAlives:   true,
 		DialTLS: func(network, addr string) (net.Conn, error) {
-			conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, payload, nil)
+			conn, err := noisesocket.Dial(network, addr, clientKeys, nil, payload, nil)
 			if err != nil {
 				fmt.Println("Dial", err)
 			}

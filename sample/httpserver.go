@@ -58,10 +58,18 @@ func startNoiseSocketServer() {
 		Private: priv,
 	}
 
-	payload := []*noisesocket.Field{{
-		Data: []byte(`{json:yesyesesese}111`),
-		Type: noisesocket.MessageTypeCustomCert,
-	},
+	payloadData := make([]byte, 2048)
+	rand.Read(payloadData)
+
+	payload := []*noisesocket.Field{
+		{
+			Data: payloadData,
+			Type: noisesocket.MessageTypeCustomCert,
+		},
+		{
+			Data: payloadData,
+			Type: noisesocket.MessageTypeSignature,
+		},
 	}
 
 	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload, nil)
