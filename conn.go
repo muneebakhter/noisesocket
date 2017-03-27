@@ -405,13 +405,15 @@ func (c *Conn) RunClientHandshake() error {
 	}
 	c.out.freeBlock(b)
 
+	//read server's answer
 	if err := c.readPacket(); err != nil {
 		return err
 	}
 
 	msg = c.input.data
 
-	if len(msg) < macSize {
+	//preliminary checks
+	if len(msg) < macSize+noise.DH25519.DHLen()*2 {
 		c.in.freeBlock(c.input)
 		c.input = nil
 		return errors.New("message is too small")
@@ -423,6 +425,7 @@ func (c *Conn) RunClientHandshake() error {
 		return errors.New("message index out of bounds")
 	}
 
+	//check for IK answer
 	hs := states[msg[0]]
 	offset := 1
 	if len(hs.PeerStatic()) > 0 {
@@ -436,6 +439,7 @@ func (c *Conn) RunClientHandshake() error {
 		offset = 2
 	}
 
+	// cannot reuse msg for read, need another buf
 	inblock := c.in.newBlock()
 	inblock.reserve(len(msg))
 	payload, csIn, csOut, err = hs.ReadMessage(inblock.data, msg[offset:])
@@ -453,13 +457,13 @@ func (c *Conn) RunClientHandshake() error {
 	if csIn == nil && csOut == nil {
 		b = c.out.newBlock()
 		if len(c.PeerKey) == 0 {
-			outBlock := c.out.newBlock()
+			outBlockPayload := c.out.newBlock()
 			for _, f := range c.payload {
-				outBlock.AddField(f.Data, f.Type)
+				outBlockPayload.AddField(f.Data, f.Type)
 			}
-			b.reserve(len(outBlock.data) + 128)
-			b.data, csIn, csOut = hs.WriteMessage(b.data, outBlock.data)
-			c.out.freeBlock(outBlock)
+			b.reserve(len(outBlockPayload.data) + 128)
+			b.data, csIn, csOut = hs.WriteMessage(b.data, outBlockPayload.data)
+			c.out.freeBlock(outBlockPayload)
 
 		} else {
 			b.data, csIn, csOut = hs.WriteMessage(b.data[:0], nil)
@@ -531,7 +535,7 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
-	for csIn == nil && csOut == nil {
+	if csIn == nil && csOut == nil {
 
 		if err := c.readPacket(); err != nil {
 			return err
@@ -554,19 +558,9 @@ func (c *Conn) RunServerHandshake() error {
 			return err
 		}
 
-		if csIn != nil && csOut != nil {
-			break
+		if csIn == nil || csOut == nil {
+			return errors.New("Not supported")
 		}
-
-		b = c.out.newBlock()
-		b.reserve(128)
-		b.data, csOut, csIn = hs.WriteMessage(b.data[:0], nil)
-		_, err = c.writePacket(b.data)
-		c.out.freeBlock(b)
-		if err != nil {
-			return err
-		}
-
 	}
 
 	c.in.cs = csIn
