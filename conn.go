@@ -79,8 +79,7 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 }
 
 var (
-	errClosed   = errors.New("tls: use of closed connection")
-	errShutdown = errors.New("tls: protocol is shutdown")
+	errClosed = errors.New("tls: use of closed connection")
 )
 
 func (c *Conn) Write(b []byte) (int, error) {
@@ -413,9 +412,10 @@ func (c *Conn) RunClientHandshake() error {
 	msg = c.input.data
 
 	//preliminary checks
-	if len(msg) < macSize+noise.DH25519.DHLen()*2 {
+	if len(msg) < macSize+noise.DH25519.DHLen()+2 { // 2 is for index and IK's extra byte
 		c.in.freeBlock(c.input)
 		c.input = nil
+		fmt.Println(len(msg), macSize+noise.DH25519.DHLen()*2)
 		return errors.New("message is too small")
 	}
 
