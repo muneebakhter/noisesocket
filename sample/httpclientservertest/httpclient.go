@@ -1,4 +1,4 @@
-package httpclientservertest
+package main
 
 import (
 	"bytes"

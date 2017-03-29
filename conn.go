@@ -12,6 +12,8 @@ import (
 
 	"sync/atomic"
 
+	"crypto/tls"
+
 	"github.com/flynn/noise"
 	"github.com/pkg/errors"
 )
@@ -42,6 +44,7 @@ type Conn struct {
 	// to wait for the handshake can wait on this, under handshakeMutex.
 	handshakeCond  *sync.Cond
 	verifyCallback VerifyCallbackFunc
+	channelBinding []byte
 }
 
 // Access to net.Conn methods.
@@ -76,6 +79,13 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 // After a Write has timed out, the TLS state is corrupt and all future writes will return the same error.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
+}
+
+func (c *Conn) ConnectionState() tls.ConnectionState {
+	return tls.ConnectionState{
+		TLSUnique: c.channelBinding,
+		Version:   tls.VersionTLS12,
+	}
 }
 
 var (
@@ -484,6 +494,7 @@ func (c *Conn) RunClientHandshake() error {
 	c.in.cs = csIn
 	c.out.cs = csOut
 	c.in.padding, c.out.padding = c.padding, c.padding
+	c.channelBinding = hs.ChannelBinding()
 	c.handshakeComplete = true
 	return nil
 }
@@ -566,6 +577,7 @@ func (c *Conn) RunServerHandshake() error {
 	c.in.cs = csIn
 	c.out.cs = csOut
 	c.in.padding, c.out.padding = c.padding, c.padding
+	c.channelBinding = hs.ChannelBinding()
 	c.handshakeComplete = true
 	return nil
 }

@@ -36,7 +36,9 @@ func init() {
 }
 
 func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-
+	if r.TLS != nil {
+		fmt.Println(r.TLS.TLSUnique)
+	}
 	w.Write(page)
 }
 
