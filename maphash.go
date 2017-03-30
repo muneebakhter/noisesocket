@@ -23,6 +23,6 @@ func generateHashKey() (uint64, uint64) {
 	return binary.BigEndian.Uint64(key), binary.BigEndian.Uint64(key[8:])
 }
 
-func hashKey(data []byte) uint64 {
+func HashKey(data []byte) uint64 {
 	return siphash.Hash(k0, k1, data)
 }

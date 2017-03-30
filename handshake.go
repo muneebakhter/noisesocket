@@ -128,6 +128,11 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 			break
 		}
 
+		if parsedPrologue[0] == math.MaxUint8 {
+			err = errors.New("too many messages")
+			return
+		}
+
 		var typeName, msg []byte
 		handshake, typeName, err = readData(handshake, 1) //read protocol name
 
@@ -146,7 +151,7 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 
 		//lookup protocol config
 
-		nameKey := hashKey(typeName)
+		nameKey := HashKey(typeName)
 		cfg, ok := handshakeConfigs[nameKey]
 		if ok {
 
@@ -154,11 +159,6 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 				Config:  cfg,
 				Message: msg,
 			})
-		}
-
-		if parsedPrologue[0] == math.MaxUint8 {
-			err = errors.New("too many messages")
-			return
 		}
 
 		parsedPrologue[0]++
@@ -178,18 +178,11 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 			for _, p := range protoCipherPriorities[pr] {
 				for i, m := range messages {
 					if p == m.Config.NameKey {
-						state := noise.NewHandshakeState(noise.Config{
-							StaticKeypair: s,
-							Initiator:     false,
-							Pattern:       m.Config.Pattern,
-							CipherSuite:   noise.NewCipherSuite(m.Config.DH, m.Config.Cipher, m.Config.Hash),
-							Prologue:      parsedPrologue,
-							Random:        random,
-						})
 
-						payload, _, _, err = state.ReadMessage(nil, m.Message)
+						state, payload, err := getState(m, s, parsedPrologue, random)
+
 						if err != nil {
-							return
+							return nil, nil, nil, 0, err
 						}
 
 						return payload, state, m.Config, byte(i), nil
@@ -198,26 +191,48 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 
 			}
 		}
+	} else if prefferedIndex == -2 {
+		//choose randomly
+		max := len(messages)
+		b := make([]byte, 1)
+		rand.Read(b)
+
+		index := int(b[0]) % max
+		m := messages[index]
+
+		state, payload, err := getState(m, s, parsedPrologue, random)
+
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
+
+		return payload, state, m.Config, byte(index), nil
+
 	} else {
 		m := messages[prefferedIndex]
-		state := noise.NewHandshakeState(noise.Config{
-			StaticKeypair: s,
-			Initiator:     false,
-			Pattern:       m.Config.Pattern,
-			CipherSuite:   noise.NewCipherSuite(m.Config.DH, m.Config.Cipher, m.Config.Hash),
-			Prologue:      parsedPrologue,
-			Random:        random,
-		})
+		state, payload, err := getState(m, s, parsedPrologue, random)
 
-		payload, _, _, err = state.ReadMessage(nil, m.Message)
 		if err != nil {
-			return
+			return nil, nil, nil, 0, err
 		}
 
 		return payload, state, m.Config, byte(prefferedIndex), nil
 	}
 	err = errors.New("no supported protocols found")
 	return
+}
+
+func getState(m *HandshakeMessage, s noise.DHKey, parsedPrologue []byte, random io.Reader) (*noise.HandshakeState, []byte, error) {
+	state := noise.NewHandshakeState(noise.Config{
+		StaticKeypair: s,
+		Pattern:       m.Config.Pattern,
+		CipherSuite:   noise.NewCipherSuite(m.Config.DH, m.Config.Cipher, m.Config.Hash),
+		Prologue:      parsedPrologue,
+		Random:        random,
+	})
+
+	payload, _, _, err := state.ReadMessage(nil, m.Message)
+	return state, payload, err
 }
 
 func readData(data []byte, sizeBytes int) (rest []byte, msg []byte, err error) {

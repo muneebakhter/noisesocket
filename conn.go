@@ -14,6 +14,8 @@ import (
 
 	"crypto/tls"
 
+	"encoding/json"
+
 	"github.com/flynn/noise"
 	"github.com/pkg/errors"
 )
@@ -21,6 +23,14 @@ import (
 const MaxPayloadSize = math.MaxUint16
 
 type VerifyCallbackFunc func(publicKey []byte, fields []*Field) error
+
+type ConnectionInfo struct {
+	Name          string
+	Index         byte
+	PeerKey       []byte
+	ServerPublic  []byte
+	HandshakeHash []byte
+}
 
 type Conn struct {
 	conn              net.Conn
@@ -45,6 +55,7 @@ type Conn struct {
 	handshakeCond  *sync.Cond
 	verifyCallback VerifyCallbackFunc
 	channelBinding []byte
+	connectionInfo []byte
 }
 
 // Access to net.Conn methods.
@@ -82,10 +93,21 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 }
 
 func (c *Conn) ConnectionState() tls.ConnectionState {
+
+	data := &struct {
+		PeerPublic    []byte
+		HandshakeHash []byte
+	}{PeerPublic: c.PeerKey,
+		HandshakeHash: c.channelBinding}
+
+	bytes, _ := json.Marshal(data)
 	return tls.ConnectionState{
-		TLSUnique: c.channelBinding,
-		Version:   tls.VersionTLS12,
+		TLSUnique: bytes,
 	}
+}
+
+func (c *Conn) ChannelBinding() []byte {
+	return c.channelBinding
 }
 
 var (
@@ -506,7 +528,7 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
-	payload, hs, _, index, err := ParseHandshake(c.myKeys, c.input.data, -1, nil)
+	payload, hs, cfg, index, err := ParseHandshake(c.myKeys, c.input.data, -2, nil)
 
 	c.in.freeBlock(c.input)
 	c.input = nil
@@ -552,7 +574,6 @@ func (c *Conn) RunServerHandshake() error {
 			return err
 		}
 
-		fmt.Println("got msg")
 		inBlock := c.in.newBlock()
 		inBlock.reserve(len(c.input.data))
 		payload, csOut, csIn, err = hs.ReadMessage(inBlock.data, c.input.data)
@@ -578,16 +599,32 @@ func (c *Conn) RunServerHandshake() error {
 	c.out.cs = csOut
 	c.in.padding, c.out.padding = c.padding, c.padding
 	c.channelBinding = hs.ChannelBinding()
+	c.PeerKey = hs.PeerStatic()
+
+	info := &ConnectionInfo{
+		Name:          string(cfg.Name),
+		Index:         index,
+		PeerKey:       hs.PeerStatic(),
+		HandshakeHash: hs.ChannelBinding(),
+		ServerPublic:  c.myKeys.Public,
+	}
+	c.connectionInfo, err = json.MarshalIndent(info, " ", "	")
+
+	if err != nil {
+		return err
+	}
+
 	c.handshakeComplete = true
 	return nil
 }
 
-func (c *Conn) processPayload(publicKey []byte, payload []byte) error {
-	if len(payload) > 0 && c.verifyCallback != nil {
-		msgs, err := parseMessageFields(payload)
-
-		if err != nil {
-			return err
+func (c *Conn) processPayload(publicKey []byte, payload []byte) (err error) {
+	if c.verifyCallback != nil {
+		var msgs []*Field
+		if len(payload) > 0 {
+			if msgs, err = parseMessageFields(payload); err != nil {
+				return
+			}
 		}
 
 		return c.verifyCallback(publicKey, msgs)

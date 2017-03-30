@@ -63,7 +63,7 @@ func init() {
 						panic("message type name length exceeds 255 bytes")
 					}
 
-					nameKey := hashKey(name)
+					nameKey := HashKey(name)
 
 					if _, exists := handshakeConfigs[nameKey]; exists {
 						panic("duplicate name hash!")
