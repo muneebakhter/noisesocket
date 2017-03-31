@@ -175,6 +175,7 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 	//choose protocol that we want to use, according to server priorities
 	if prefferedIndex == -1 {
 		for _, pr := range protoPriorities {
+		l:
 			for _, p := range protoCipherPriorities[pr] {
 				for i, m := range messages {
 					if p == m.Config.NameKey {
@@ -182,6 +183,7 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 						state, payload, err := getState(m, s, parsedPrologue, random)
 
 						if err != nil {
+							break l //try XX if IK did not work
 							return nil, nil, nil, 0, err
 						}
 
@@ -191,8 +193,7 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 
 			}
 		}
-	} else if prefferedIndex == -2 {
-		//choose randomly
+	} else if prefferedIndex == -2 { //random
 		max := len(messages)
 		b := make([]byte, 1)
 		rand.Read(b)
@@ -210,13 +211,12 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 
 	} else {
 		m := messages[prefferedIndex]
-		state, payload, err := getState(m, s, parsedPrologue, random)
-
-		if err != nil {
+		if state, payload, err := getState(m, s, parsedPrologue, random); err != nil {
 			return nil, nil, nil, 0, err
+		} else {
+			return payload, state, m.Config, byte(prefferedIndex), nil
 		}
 
-		return payload, state, m.Config, byte(prefferedIndex), nil
 	}
 	err = errors.New("no supported protocols found")
 	return

@@ -29,7 +29,6 @@ func main() {
 
 func startNoiseSocketServer(serverKeys noise.DHKey, payload []*noisesocket.Field, verifier noisesocket.VerifyCallbackFunc) {
 	server := &http.Server{
-		Addr:         ":2345",
 		ReadTimeout:  1 * time.Hour,
 		WriteTimeout: 1 * time.Hour,
 	}
@@ -42,7 +41,7 @@ func startNoiseSocketServer(serverKeys noise.DHKey, payload []*noisesocket.Field
 		w.Write(buf)
 	})
 
-	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload, verifier)
+	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload, verifier, -1)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)

@@ -27,7 +27,14 @@ var (
 
 func main() {
 
-	backendUrl, _ := url.Parse("https://localhost:13242")
+	go startProxy("https://localhost:13242", ":1080")
+	go startProxy("https://localhost:13243", ":1081")
+	startProxy("https://localhost:13244", ":1082")
+
+}
+
+func startProxy(backendUrlString, listen string) {
+	backendUrl, _ := url.Parse(backendUrlString)
 	reverseProxy := httputil.NewSingleHostReverseProxy(backendUrl)
 
 	transport := &proxyTransport{
@@ -46,9 +53,8 @@ func main() {
 
 	reverseProxy.Transport = transport
 	reverseProxy.BufferPool = bpool.NewBytePool(10, 32*10124)
-	fmt.Println("Reverse proxy server is listening on port 1080. Try http://localhost:1080")
-	log.Fatal(http.ListenAndServe(":1080", reverseProxy))
-
+	fmt.Println("Reverse proxy server is listening on ", listen, fmt.Sprintf(". Try http://localhost%s", listen))
+	log.Fatal(http.ListenAndServe(listen, reverseProxy))
 }
 
 type proxyTransport struct {

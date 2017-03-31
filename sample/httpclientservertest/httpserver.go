@@ -70,7 +70,7 @@ func startNoiseSocketServer() {
 		},
 	}
 
-	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload, nil)
+	l, err := noisesocket.Listen("tcp", ":12888", serverKeys, payload, nil, -1)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)

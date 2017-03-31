@@ -52,10 +52,11 @@ type Conn struct {
 	// handshakeCond, if not nil, indicates that a goroutine is committed
 	// to running the handshake for this Conn. Other goroutines that need
 	// to wait for the handshake can wait on this, under handshakeMutex.
-	handshakeCond  *sync.Cond
-	verifyCallback VerifyCallbackFunc
-	channelBinding []byte
-	connectionInfo []byte
+	handshakeCond     *sync.Cond
+	verifyCallback    VerifyCallbackFunc
+	channelBinding    []byte
+	connectionInfo    []byte
+	HandshakeStrategy int
 }
 
 // Access to net.Conn methods.
@@ -528,7 +529,7 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
-	payload, hs, cfg, index, err := ParseHandshake(c.myKeys, c.input.data, -2, nil)
+	payload, hs, cfg, index, err := ParseHandshake(c.myKeys, c.input.data, c.HandshakeStrategy, nil)
 
 	c.in.freeBlock(c.input)
 	c.input = nil

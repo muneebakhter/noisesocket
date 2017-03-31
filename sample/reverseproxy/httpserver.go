@@ -22,8 +22,11 @@ import (
 
 func main() {
 
-	startNoiseSocketServer()
+	go startNoiseSocketServer(13242, -1)
+	go startNoiseSocketServer(13243, -2)
+	go startNoiseSocketServer(13244, 0)
 
+	startHttpServer()
 }
 
 var page []byte
@@ -44,7 +47,7 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Write(page)
 }
 
-func startNoiseSocketServer() {
+func startNoiseSocketServer(port, strategy int) {
 
 	server := &http.Server{
 		ReadTimeout:  10 * time.Second,
@@ -59,13 +62,13 @@ func startNoiseSocketServer() {
 
 	serverKeys := noise.DH25519.GenerateKeypair(rand.Reader)
 
-	l, err := noisesocket.Listen("tcp", ":13242", serverKeys, nil, nil)
+	l, err := noisesocket.Listen("tcp", fmt.Sprintf(":%d", port), serverKeys, nil, nil, strategy)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Noise http server is listening on port 13242")
+	fmt.Println("Noise http server is listening on port", port)
 	if err := server.Serve(l); err != nil {
 		panic(err)
 	}
@@ -88,4 +91,10 @@ func Status(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	info := val.FieldByName("connectionInfo").Slice(0, infoLen)
 
 	w.Write(info.Bytes())
+}
+
+func startHttpServer() {
+	router := httprouter.New()
+	router.GET("/", Index)
+	http.ListenAndServe(":80", router)
 }
