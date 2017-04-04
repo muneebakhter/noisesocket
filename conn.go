@@ -57,6 +57,7 @@ type Conn struct {
 	channelBinding    []byte
 	connectionInfo    []byte
 	HandshakeStrategy int
+	MaxPacketSize     uint16
 }
 
 // Access to net.Conn methods.
@@ -201,7 +202,13 @@ func (c *Conn) writePacketLocked(data []byte) (int, error) {
 }
 
 func (c *Conn) maxPayloadSizeForWrite(block *packet) uint16 {
-	res := MaxPayloadSize - uint16(len(block.data))
+
+	max := c.MaxPacketSize
+	if max == 0 || !c.handshakeComplete {
+		max = MaxPayloadSize
+	}
+
+	res := max - uint16(len(block.data))
 	if c.out.cs != nil {
 		if c.padding > 0 {
 			return res - macSize - msgHeaderSize*2
@@ -427,6 +434,8 @@ func (c *Conn) RunClientHandshake() error {
 		b.AddField(f.Data, f.Type)
 	}
 
+	c.AddPacketSizeField(b)
+
 	if msg, _, states, err = ComposeInitiatorHandshakeMessages(c.myKeys, c.PeerKey, b.data, nil); err != nil {
 		return err
 	}
@@ -494,6 +503,7 @@ func (c *Conn) RunClientHandshake() error {
 			for _, f := range c.payload {
 				outBlockPayload.AddField(f.Data, f.Type)
 			}
+			c.AddPacketSizeField(b)
 			b.reserve(len(outBlockPayload.data) + 128)
 			b.data, csIn, csOut = hs.WriteMessage(b.data, outBlockPayload.data)
 			c.out.freeBlock(outBlockPayload)
@@ -522,6 +532,14 @@ func (c *Conn) RunClientHandshake() error {
 	return nil
 }
 
+func (c *Conn) AddPacketSizeField(p *packet) {
+	if c.MaxPacketSize != 0 {
+		size := make([]byte, 2) //TODO reuse
+		binary.BigEndian.PutUint16(size, c.MaxPacketSize)
+		p.AddField(size, MessageTypeMaxPacketSize)
+	}
+}
+
 func (c *Conn) RunServerHandshake() error {
 
 	var csOut, csIn *noise.CipherState
@@ -538,9 +556,12 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 
+	currentMaxPacketSize := c.MaxPacketSize
 	if err = c.processPayload(hs.PeerStatic(), payload); err != nil {
 		return err
 	}
+
+	sendMaxPacketSize := c.MaxPacketSize == currentMaxPacketSize //do not send if overridden by client
 
 	b := c.out.newBlock()
 	b.resize(1)
@@ -557,6 +578,10 @@ func (c *Conn) RunServerHandshake() error {
 
 	for _, f := range c.payload {
 		outBlock.AddField(f.Data, f.Type)
+	}
+
+	if sendMaxPacketSize {
+		c.AddPacketSizeField(outBlock)
 	}
 
 	b.reserve(len(outBlock.data) + 128)
@@ -620,14 +645,26 @@ func (c *Conn) RunServerHandshake() error {
 }
 
 func (c *Conn) processPayload(publicKey []byte, payload []byte) (err error) {
-	if c.verifyCallback != nil {
-		var msgs []*Field
-		if len(payload) > 0 {
-			if msgs, err = parseMessageFields(payload); err != nil {
-				return
+
+	var msgs []*Field
+	if len(payload) > 0 {
+		if msgs, err = parseMessageFields(payload); err != nil {
+			return
+		}
+		for _, m := range msgs {
+			if m.Type == MessageTypeMaxPacketSize {
+				if len(m.Data) != uint16Size {
+					return errors.New("invalid field size")
+				}
+				max := binary.BigEndian.Uint16(m.Data)
+				if max < 128 {
+					return errors.New("invalid max packet size")
+				}
+				c.MaxPacketSize = max
 			}
 		}
-
+	}
+	if c.verifyCallback != nil {
 		return c.verifyCallback(publicKey, msgs)
 	}
 	return nil

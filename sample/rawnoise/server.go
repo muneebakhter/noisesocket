@@ -20,7 +20,7 @@ func main() {
 		Public:  pub,
 		Private: priv,
 	}
-	l, err := noisesocket.Listen("tcp", ":10000", serverKeys, nil, nil, -1)
+	l, err := noisesocket.Listen("tcp", ":10000", serverKeys, nil, nil, -1, 0)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)

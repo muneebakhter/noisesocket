@@ -68,7 +68,7 @@ func makeTransport(instanceKey noise.DHKey, serverPub []byte, payload []*noiseso
 	return &http.Transport{
 		MaxIdleConnsPerHost: 10,
 		DialTLS: func(network, addr string) (net.Conn, error) {
-			conn, err := noisesocket.Dial(network, addr, instanceKey, serverPub, payload, callbackFunc)
+			conn, err := noisesocket.Dial(network, addr, instanceKey, serverPub, payload, callbackFunc, 0)
 			if err != nil {
 				fmt.Println("Dial", err)
 			}

@@ -22,11 +22,11 @@ func main() {
 		Private: priv1,
 	}
 
-	conn, err := noisesocket.Dial("tcp", "127.0.0.1:10000", clientKeys, nil, nil, nil)
+	conn, err := noisesocket.Dial("tcp", "127.0.0.1:10000", clientKeys, nil, nil, nil, 0)
 	if err != nil {
 		panic(err)
 	}
-	threads := 100
+	threads := 1
 	count := 5 * 1000
 	c := make(chan bool, threads)
 	t := time.Now()

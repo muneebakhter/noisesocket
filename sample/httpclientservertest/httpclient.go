@@ -55,7 +55,7 @@ func main() {
 		MaxIdleConnsPerHost: 1,
 		DisableKeepAlives:   true,
 		DialTLS: func(network, addr string) (net.Conn, error) {
-			conn, err := noisesocket.Dial(network, addr, clientKeys, nil, payload, nil)
+			conn, err := noisesocket.Dial(network, addr, clientKeys, nil, payload, nil, 0)
 			if err != nil {
 				fmt.Println("Dial", err)
 			}

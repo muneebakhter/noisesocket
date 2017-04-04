@@ -12,13 +12,10 @@ import (
 
 	"crypto/rand"
 
-	"github.com/flynn/noise"
-	"gopkg.in/noisesocket.v0"
-)
-import (
 	"encoding/base64"
 
-	"github.com/oxtoacart/bpool"
+	"github.com/flynn/noise"
+	"gopkg.in/noisesocket.v0"
 )
 
 var (
@@ -45,14 +42,14 @@ func startProxy(backendUrlString, listen string) {
 
 	transport.DialTLS = func(network, addr string) (net.Conn, error) {
 		clientKeys := noise.DH25519.GenerateKeypair(rand.Reader)
-		conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, nil, serverCallback)
+		conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, nil, serverCallback, 512)
 		transport.conn = conn
 		return conn, err
 
 	}
 
 	reverseProxy.Transport = transport
-	reverseProxy.BufferPool = bpool.NewBytePool(10, 32*10124)
+	//reverseProxy.BufferPool = bpool.NewBytePool(10, 32*10124)
 	fmt.Println("Reverse proxy server is listening on ", listen, fmt.Sprintf(". Try http://localhost%s", listen))
 	log.Fatal(http.ListenAndServe(listen, reverseProxy))
 }
@@ -66,8 +63,11 @@ type proxyTransport struct {
 
 func (p *proxyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := p.Transport.RoundTrip(req)
-	resp.Header.Add("X-HANDSHAKE-HASH", base64.StdEncoding.EncodeToString(p.conn.ChannelBinding()))
-	resp.Header.Add("X-PEER-KEY", base64.StdEncoding.EncodeToString(serverPub))
+	if err == nil {
+		resp.Header.Add("X-HANDSHAKE-HASH", base64.StdEncoding.EncodeToString(p.conn.ChannelBinding()))
+		resp.Header.Add("X-PEER-KEY", base64.StdEncoding.EncodeToString(serverPub))
+	}
+
 	return resp, err
 }
 

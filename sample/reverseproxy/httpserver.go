@@ -18,6 +18,8 @@ import (
 	"github.com/flynn/noise"
 	"github.com/julienschmidt/httprouter"
 	"gopkg.in/noisesocket.v0"
+	"golang.org/x/crypto/acme/autocert"
+	"crypto/tls"
 )
 
 func main() {
@@ -62,7 +64,7 @@ func startNoiseSocketServer(port, strategy int) {
 
 	serverKeys := noise.DH25519.GenerateKeypair(rand.Reader)
 
-	l, err := noisesocket.Listen("tcp", fmt.Sprintf(":%d", port), serverKeys, nil, nil, strategy)
+	l, err := noisesocket.Listen("tcp", fmt.Sprintf(":%d", port), serverKeys, nil, nil, strategy, 0)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)
@@ -94,7 +96,25 @@ func Status(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 }
 
 func startHttpServer() {
+
+	certManager := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist("noise.virgil.net"), //your domain here
+		Cache:      autocert.DirCache("certs"), //folder for storing certificates
+	}
+
+	server := &http.Server{
+		Addr: ":443",
+		TLSConfig: &tls.Config{
+			GetCertificate: certManager.GetCertificate,
+		},
+	}
+
+
 	router := httprouter.New()
 	router.GET("/", Index)
-	http.ListenAndServe(":80", router)
+
+	server.Handler = router
+
+	server.ListenAndServeTLS("","")
 }
