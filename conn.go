@@ -2,7 +2,6 @@ package noisesocket
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -183,8 +182,8 @@ func (c *Conn) writePacketLocked(data []byte) (int, error) {
 			binary.BigEndian.PutUint16(packet.data, uint16(len(data)))
 		}
 
-		if c.out.cs != nil && c.padding == 0 {
-			packet.AddPadding(c.padding)
+		if c.out.cs != nil && c.padding != 0 {
+			packet.AddPadding(c.padding, c.MaxPacketSize)
 		}
 
 		b := c.out.encryptIfNeeded(packet)
@@ -208,7 +207,7 @@ func (c *Conn) maxPayloadSizeForWrite(block *packet) uint16 {
 		max = MaxPayloadSize
 	}
 
-	res := max - uint16(len(block.data))
+	res := max // - uint16(len(block.data))
 	if c.out.cs != nil {
 		if c.padding > 0 {
 			return res - macSize - msgHeaderSize*2
@@ -457,7 +456,6 @@ func (c *Conn) RunClientHandshake() error {
 	if len(msg) < macSize+noise.DH25519.DHLen()+2 { // 2 is for index and IK's extra byte
 		c.in.freeBlock(c.input)
 		c.input = nil
-		fmt.Println(len(msg), macSize+noise.DH25519.DHLen()*2)
 		return errors.New("message is too small")
 	}
 
@@ -503,7 +501,7 @@ func (c *Conn) RunClientHandshake() error {
 			for _, f := range c.payload {
 				outBlockPayload.AddField(f.Data, f.Type)
 			}
-			c.AddPacketSizeField(b)
+			c.AddPacketSizeField(outBlockPayload)
 			b.reserve(len(outBlockPayload.data) + 128)
 			b.data, csIn, csOut = hs.WriteMessage(b.data, outBlockPayload.data)
 			c.out.freeBlock(outBlockPayload)
@@ -546,7 +544,6 @@ func (c *Conn) RunServerHandshake() error {
 	if err := c.readPacket(); err != nil {
 		return err
 	}
-
 	payload, hs, cfg, index, err := ParseHandshake(c.myKeys, c.input.data, c.HandshakeStrategy, nil)
 
 	c.in.freeBlock(c.input)
@@ -555,7 +552,6 @@ func (c *Conn) RunServerHandshake() error {
 	if err != nil {
 		return err
 	}
-
 	currentMaxPacketSize := c.MaxPacketSize
 	if err = c.processPayload(hs.PeerStatic(), payload); err != nil {
 		return err
@@ -589,7 +585,6 @@ func (c *Conn) RunServerHandshake() error {
 	c.out.freeBlock(outBlock)
 	_, err = c.writePacket(b.data)
 	c.out.freeBlock(b)
-
 	if err != nil {
 		return err
 	}

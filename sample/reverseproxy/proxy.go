@@ -73,6 +73,7 @@ func (p *proxyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 //used to cache server's key
 func serverCallback(publicKey []byte, _ []*noisesocket.Field) error {
-	serverPub = publicKey
+	fmt.Println("callback")
+	//serverPub = publicKey
 	return nil
 }

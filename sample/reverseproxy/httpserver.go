@@ -15,11 +15,12 @@ import (
 
 	"crypto/rand"
 
+	"crypto/tls"
+
 	"github.com/flynn/noise"
 	"github.com/julienschmidt/httprouter"
-	"gopkg.in/noisesocket.v0"
 	"golang.org/x/crypto/acme/autocert"
-	"crypto/tls"
+	"gopkg.in/noisesocket.v0"
 )
 
 func main() {
@@ -43,9 +44,6 @@ func init() {
 }
 
 func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	if r.TLS != nil {
-		fmt.Println(r.TLS.TLSUnique)
-	}
 	w.Write(page)
 }
 
@@ -100,7 +98,7 @@ func startHttpServer() {
 	certManager := autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist("noise.virgil.net"), //your domain here
-		Cache:      autocert.DirCache("certs"), //folder for storing certificates
+		Cache:      autocert.DirCache("certs"),                 //folder for storing certificates
 	}
 
 	server := &http.Server{
@@ -110,11 +108,10 @@ func startHttpServer() {
 		},
 	}
 
-
 	router := httprouter.New()
 	router.GET("/", Index)
 
 	server.Handler = router
 
-	server.ListenAndServeTLS("","")
+	server.ListenAndServeTLS("", "")
 }
