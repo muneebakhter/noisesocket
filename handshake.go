@@ -194,21 +194,18 @@ func ParseHandshake(s noise.DHKey, handshake []byte, prefferedIndex int, ePrivat
 			}
 		}
 	} else if prefferedIndex == -2 { //random
-		max := len(messages)
-		b := make([]byte, 1)
-		rand.Read(b)
 
-		index := int(b[0]) % max
-		m := messages[index]
-
-		state, payload, err := getState(m, s, parsedPrologue, random)
-
-		if err != nil {
-			return nil, nil, nil, 0, err
+		rndMsgs := make(map[int]*HandshakeMessage) //map will shuffle the order
+		for i, m := range messages {
+			rndMsgs[i] = m
 		}
 
-		return payload, state, m.Config, byte(index), nil
-
+		for i, m := range rndMsgs {
+			state, payload, err := getState(m, s, parsedPrologue, random)
+			if err == nil {
+				return payload, state, m.Config, byte(i), nil
+			}
+		}
 	} else {
 		m := messages[prefferedIndex]
 		if state, payload, err := getState(m, s, parsedPrologue, random); err != nil {

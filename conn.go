@@ -545,7 +545,6 @@ func (c *Conn) RunServerHandshake() error {
 		return err
 	}
 	payload, hs, cfg, index, err := ParseHandshake(c.myKeys, c.input.data, c.HandshakeStrategy, nil)
-
 	c.in.freeBlock(c.input)
 	c.input = nil
 
