@@ -409,7 +409,12 @@ func (c *Conn) Handshake() error {
 		c.handshakeErr = c.RunClientHandshake()
 	} else {
 		c.handshakeErr = c.RunServerHandshake()
+		if c.handshakeErr != nil {
+			//send plaintext error to client for debug
+			c.writePacket([]byte(c.handshakeErr.Error())) //don't care about result
+		}
 	}
+
 	// Wake any other goroutines that are waiting for this handshake to
 	// complete.
 	c.handshakeCond.Broadcast()

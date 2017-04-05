@@ -43,7 +43,7 @@ func init() {
 
 }
 
-func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func Index(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.Write(page)
 }
 
