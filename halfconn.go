@@ -5,8 +5,6 @@ import (
 	"errors"
 	"sync"
 
-	"fmt"
-
 	"github.com/flynn/noise"
 )
 
@@ -33,7 +31,6 @@ func (h *halfConn) encryptIfNeeded(block *packet) []byte {
 
 		payloadSize := len(block.data) - uint16Size + macSize
 		if payloadSize > MaxPayloadSize {
-			fmt.Println(len(block.data))
 			panic("data is too big to be sent")
 		}
 
