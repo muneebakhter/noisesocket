@@ -207,15 +207,15 @@ func (c *Conn) maxPayloadSizeForWrite(block *packet) uint16 {
 		max = MaxPayloadSize
 	}
 
-	res := max // - uint16(len(block.data))
+	//res := max //- uint16(len(block.data))
 	if c.out.cs != nil {
 		if c.padding > 0 {
-			return res - macSize - msgHeaderSize*2
+			return max - macSize - msgHeaderSize*2
 		} else {
-			return res - macSize - msgHeaderSize
+			return max - macSize - msgHeaderSize
 		}
 	}
-	return res
+	return max
 
 }
 

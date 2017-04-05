@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 
 	"github.com/flynn/noise"
+	"github.com/oxtoacart/bpool"
 	"gopkg.in/noisesocket.v0"
 )
 
@@ -24,9 +25,11 @@ var (
 
 func main() {
 
-	go startProxy("https://localhost:13242", ":1080")
-	go startProxy("https://localhost:13243", ":1081")
-	startProxy("https://localhost:13244", ":1082")
+	host := "127.0.0.1" //"192.168.247.128"
+	fmtstr := "https://%s:%d"
+	go startProxy(fmt.Sprintf(fmtstr, host, 13242), ":1080")
+	go startProxy(fmt.Sprintf(fmtstr, host, 13243), ":1081")
+	startProxy(fmt.Sprintf(fmtstr, host, 13244), ":1082")
 
 }
 
@@ -49,7 +52,7 @@ func startProxy(backendUrlString, listen string) {
 	}
 
 	reverseProxy.Transport = transport
-	//reverseProxy.BufferPool = bpool.NewBytePool(10, 32*10124)
+	reverseProxy.BufferPool = bpool.NewBytePool(10, 32*10124)
 	fmt.Println("Reverse proxy server is listening on ", listen, fmt.Sprintf(". Try http://localhost%s", listen))
 	log.Fatal(http.ListenAndServe(listen, reverseProxy))
 }
@@ -73,7 +76,8 @@ func (p *proxyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 //used to cache server's key
 func serverCallback(publicKey []byte, _ []*noisesocket.Field) error {
-	fmt.Println("callback")
-	//serverPub = publicKey
+	if len(publicKey) != 0 {
+		serverPub = publicKey
+	}
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 
+	"fmt"
+
 	"github.com/flynn/noise"
 )
 
@@ -29,11 +31,11 @@ func (h *halfConn) encryptIfNeeded(block *packet) []byte {
 
 	if h.cs != nil {
 
-		if len(block.data) > (MaxPayloadSize - macSize - uint16Size) {
+		payloadSize := len(block.data) - uint16Size + macSize
+		if payloadSize > MaxPayloadSize {
+			fmt.Println(len(block.data))
 			panic("data is too big to be sent")
 		}
-
-		payloadSize := len(block.data) - uint16Size + macSize
 
 		block.data = h.cs.Encrypt(block.data[:uint16Size], nil, block.data[uint16Size:])
 		binary.BigEndian.PutUint16(block.data, uint16(payloadSize))

@@ -73,11 +73,11 @@ func (b *packet) AddPadding(padding uint16, maxPacketSize uint16) {
 	if maxPacketSize == 0 {
 		maxPacketSize = MaxPayloadSize
 	}
-	rawDataLen := uint16(len(b.data))
+	rawDataLen := len(b.data)
 
 	payloadSize := rawDataLen + msgHeaderSize /*zero padding*/ + macSize - uint16Size /*packet header*/
 
-	if payloadSize > maxPacketSize {
+	if payloadSize > int(maxPacketSize) {
 		panic("no space left for padding")
 	}
 
@@ -86,11 +86,11 @@ func (b *packet) AddPadding(padding uint16, maxPacketSize uint16) {
 		paddingSize = padding - uint16(payloadSize)%padding
 	}
 
-	if payloadSize+paddingSize > maxPacketSize {
-		paddingSize = maxPacketSize - payloadSize
+	if payloadSize+int(paddingSize) > int(maxPacketSize) {
+		paddingSize = maxPacketSize - uint16(payloadSize)
 	}
 
-	b.resize(int(rawDataLen + msgHeaderSize + paddingSize))
+	b.resize(int(rawDataLen + msgHeaderSize + int(paddingSize)))
 	binary.BigEndian.PutUint16(b.data[rawDataLen:], uint16(paddingSize+uint16Size))
 	binary.BigEndian.PutUint16(b.data[rawDataLen+2:], MessageTypePadding)
 }
