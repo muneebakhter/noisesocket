@@ -93,6 +93,10 @@ func Status(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.Write(info.Bytes())
 }
 
+func TlsStatus(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
+	w.Write([]byte("Conect via Noise Socket ports and you'll see connection status"))
+}
+
 func startHttpServer() {
 
 	certManager := autocert.Manager{
@@ -110,6 +114,7 @@ func startHttpServer() {
 
 	router := httprouter.New()
 	router.GET("/", Index)
+	router.GET("/status", TlsStatus)
 
 	server.Handler = router
 
