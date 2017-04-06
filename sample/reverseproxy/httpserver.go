@@ -97,8 +97,8 @@ func startHttpServer() {
 
 	certManager := autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist("noise.virgil.net"), //your domain here
-		Cache:      autocert.DirCache("certs"),                 //folder for storing certificates
+		HostPolicy: autocert.HostWhitelist("noise.virgilsecurity.com"), //your domain here
+		Cache:      autocert.DirCache("certs"),                         //folder for storing certificates
 	}
 
 	server := &http.Server{

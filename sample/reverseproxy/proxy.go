@@ -25,7 +25,7 @@ var (
 
 func main() {
 
-	host := "127.0.0.1" //"192.168.247.128"
+	host := "noise.virgilsecurity.com"
 	fmtstr := "https://%s:%d"
 	go startProxy(fmt.Sprintf(fmtstr, host, 13242), ":1080")
 	go startProxy(fmt.Sprintf(fmtstr, host, 13243), ":1081")
