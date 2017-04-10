@@ -180,11 +180,11 @@ func TestGenerateVectors(t *testing.T) {
 
 					pkti := InitializePacket()
 					pkti.AddField(di, MessageTypeData)
-					pkti.AddPadding(10)
+					pkti.AddPadding(10, 0)
 
 					pktr := InitializePacket()
 					pktr.AddField(dr, MessageTypeData)
-					pktr.AddPadding(10)
+					pktr.AddPadding(10, 0)
 
 					msg = &Message{
 						Payload: hex.EncodeToString(pkti.data[2:]),
