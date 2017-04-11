@@ -15,17 +15,22 @@ import (
 	"encoding/base64"
 
 	"github.com/flynn/noise"
+	"github.com/namsral/flag"
 	"github.com/oxtoacart/bpool"
 	"gopkg.in/noisesocket.v0"
 )
 
 var (
 	serverPub []byte
+	host      string
 )
+
+func init() {
+	flag.StringVar(&host, "host", "noise.virgilsecurity.com", "host to connect to")
+}
 
 func main() {
 
-	host := "noise.virgilsecurity.com"
 	fmtstr := "https://%s:%d"
 	go startProxy(fmt.Sprintf(fmtstr, host, 13242), ":1080")
 	go startProxy(fmt.Sprintf(fmtstr, host, 13243), ":1081")
@@ -45,7 +50,7 @@ func startProxy(backendUrlString, listen string) {
 
 	transport.DialTLS = func(network, addr string) (net.Conn, error) {
 		clientKeys := noise.DH25519.GenerateKeypair(rand.Reader)
-		conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, nil, serverCallback, 512)
+		conn, err := noisesocket.Dial(network, addr, clientKeys, serverPub, nil, serverCallback, 0)
 		transport.conn = conn
 		return conn, err
 

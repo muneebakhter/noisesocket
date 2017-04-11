@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	MessageTypePadding uint16 = iota
-	MessageTypeData
+	MessageTypeData uint16 = iota
+	MessageTypePadding
 	MessageTypeMaxPacketSize
 	MessageTypeCustomCert = 1024
 	MessageTypeSignature  = 1025
